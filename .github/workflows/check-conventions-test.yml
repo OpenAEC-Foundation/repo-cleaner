@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   check:
-    uses: OpenAEC-Foundation/RepoCleaner/.github/workflows/check-conventions.yml@master
+    uses: OpenAEC-Foundation/repo-cleaner/.github/workflows/check-conventions.yml@master
     with:
       repo_name: ${{ github.event.repository.name }}
       org: OpenAEC-Foundation
