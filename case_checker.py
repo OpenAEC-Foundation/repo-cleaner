@@ -188,19 +188,15 @@ class Convention:
         if not pattern:
             return [f"Unknown case style: {case_name}"]
 
-        if not re.match(pattern, name):
+        words = extract_words(name)
+
+        if len(words) > 3:
+            issues.append("Too many segments (>3) - needs manual review")
+        elif not re.match(pattern, name):
             issues.append(f"Does not match {case_name}")
-
-            # Extract words to check segment count
-            words = extract_words(name)
-
-            if len(words) > 3:
-                issues.append("Too many segments (>3) - needs manual review")
-            else:
-                # Provide suggestion using pre-extracted words
-                suggested = convert_case(words, case_name)
-                if suggested != name:
-                    issues.append(f"Suggested: '{suggested}'")
+            suggested = convert_case(words, case_name)
+            if suggested != name:
+                issues.append(f"Suggested: '{suggested}'")
 
         return issues
 
