@@ -61,7 +61,7 @@ Where a language-specific tool can safely own a convention phase, the scanner sh
 - `filesystem_scanner.py`
   - Detects directory and file naming violations
   - Applies directory and file renames
-  - Updates safe code references after path changes
+  - Coordinates language-aware reference updates after path changes
   - Checks the `>1000` line rule
 - `reporting.py`
   - Builds terminal output
@@ -158,6 +158,8 @@ Rules:
 
 Directory and file renames must update safe references in code before the next rename phase continues.
 
+When renaming a directory, the scanner should prefer language-server-backed or equivalent language-aware rename support so references update automatically where the ecosystem can provide it. The scanner should only fall back to narrower path-reference rewriting when a language server or similarly safe refactoring backend is not available.
+
 Reference update coverage includes, when safely rewritable:
 
 - include paths
@@ -184,6 +186,7 @@ The scanner must execute phases in this order:
 3. Rename directories one by one
    - Process the current live tree
    - Refresh structure after each rename
+   - Prefer language-server-backed reference updates before falling back to narrower path rewriting
    - Update safe path references before proceeding
 4. Detect which supported languages are present in the cloned repository
    - A single repository may contain any mix of PHP, C++, and JavaScript
