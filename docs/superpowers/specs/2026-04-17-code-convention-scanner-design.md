@@ -35,7 +35,7 @@ The scanner operates on a live temporary clone. It does not calculate a full fix
 
 Where a language-specific tool can safely own a convention phase, the scanner should use that tool instead of custom text replacement. Python remains responsible for orchestration, execution order, temporary workspace management, and final reporting.
 
-Across rename phases, the scanner should prefer language-server-backed or equivalent language-aware refactoring support whenever the ecosystem can provide it.
+Across rename phases, the scanner must select one authoritative refactoring backend per rename category and language combination before mutation begins. Once selected, that backend is the only rename mechanism for that phase.
 
 ## Architecture
 
@@ -96,6 +96,18 @@ The scanner must work against the current repository state at every phase.
 - It must report violations against the final live path or identifier after previous renames have been applied
 
 This is especially important for directory renames, because later file paths and code references depend on earlier directory changes.
+
+## Backend Selection Policy
+
+The scanner must not combine multiple rename strategies for the same rename phase.
+
+- Select one authoritative backend for each rename category and language combination during preflight
+- If a language server or equivalent refactoring backend supports the rename category, use that backend directly
+- Do not attempt a fallback rename strategy when the selected backend fails
+- Do not retry the same rename through a second mechanism after a failed attempt
+- If the selected backend cannot complete the rename safely, stop further mutation for that repository and mark the repository scan as failed
+
+This avoids conflicting rewrites and prevents partial “best effort” renames from masking tool failures.
 
 ## Conventions And Rule Coverage
 
@@ -160,7 +172,7 @@ Rules:
 
 Directory, file, and symbol renames must update safe references in code before the next rename phase continues.
 
-For all rename phases, the scanner should prefer language-server-backed or equivalent language-aware rename support so references update automatically where the ecosystem can provide it. The scanner should only fall back to narrower rewriting when a language server or similarly safe refactoring backend is not available.
+For all rename phases, the scanner must use the single selected authoritative rename backend for that phase. If a language server or equivalent language-aware refactoring backend is selected, it must perform both the rename and the related reference updates. The scanner must not fall back to narrower rewriting when that backend fails.
 
 Reference update coverage includes, when safely rewritable:
 
@@ -179,7 +191,8 @@ The scanner must execute phases in this order:
 
 1. Load conventions
 2. Detect external tools available in the current environment
-3. Verify GitHub authentication and required repository permissions
+3. Select one authoritative rename backend per rename category and language combination
+4. Verify GitHub authentication and required repository permissions
 
 ### Mutation And Validation
 
@@ -188,23 +201,28 @@ The scanner must execute phases in this order:
 3. Rename directories one by one
    - Process the current live tree
    - Refresh structure after each rename
-   - Prefer language-server-backed reference updates before falling back to narrower path rewriting
-   - Update safe path references before proceeding
+   - Use the selected authoritative rename backend and its reference update capability
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 4. Detect which supported languages are present in the cloned repository
    - A single repository may contain any mix of PHP, C++, and JavaScript
 5. Rename files one by one
-   - Prefer language-server-backed reference updates before falling back to narrower path rewriting
-   - Update safe path references after each file rename
+   - Use the selected authoritative rename backend and its reference update capability
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 6. Rename namespace or module-like symbols if the conventions schema defines them and the selected backend can do this safely
-   - Prefer language-server-backed or equivalent language-aware renames
+   - Use the selected authoritative rename backend
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 7. Rename class or type-like symbols
-   - Prefer language-server-backed or equivalent language-aware renames
+   - Use the selected authoritative rename backend
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 8. Rename function or method-like symbols
-   - Prefer language-server-backed or equivalent language-aware renames
+   - Use the selected authoritative rename backend
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 9. Rename variable-like symbols
-   - Prefer language-server-backed or equivalent language-aware renames
+   - Use the selected authoritative rename backend
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 10. Rename constant or enum-like symbols if the conventions schema defines them and the selected backend can do this safely
-   - Prefer language-server-backed or equivalent language-aware renames
+   - Use the selected authoritative rename backend
+   - If the backend fails, stop further mutation for that repository and mark the repository scan as failed
 11. Run `clang-format` across the full repository set of supported files
 12. Re-scan the final tree
    - Report remaining naming violations against final names and final paths
@@ -249,6 +267,7 @@ The branch name alone is the ownership signal. The scanner does not need a label
 The scanner must finish its work before failing the job.
 
 - It must continue through all phases and supported languages even when violations are found
+- If a selected rename backend fails, it must stop further mutation for that repository immediately
 - It must continue through other repositories when one repository has scan failures, if the command targets multiple repositories
 - It may record phase failures and include them in the terminal summary and PR body
 - The final process exit code must be non-zero when:
@@ -291,6 +310,7 @@ The final report must reflect the repository's final state after all attempted f
 
 - Do not commit temporary configuration files
 - Do not rewrite identifiers with naive text replacement when a safer language-aware backend is available
+- Do not switch to a second rename mechanism after a selected rename backend fails
 - Do not update arbitrary human-owned pull requests
 - Do not create multiple scanner pull requests for the same repository
 - Do not stop after the first violation
