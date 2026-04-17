@@ -35,6 +35,8 @@ The scanner operates on a live temporary clone. It does not calculate a full fix
 
 Where a language-specific tool can safely own a convention phase, the scanner should use that tool instead of custom text replacement. Python remains responsible for orchestration, execution order, temporary workspace management, and final reporting.
 
+Across rename phases, the scanner should prefer language-server-backed or equivalent language-aware refactoring support whenever the ecosystem can provide it.
+
 ## Architecture
 
 ### Module Layout
@@ -156,9 +158,9 @@ Rules:
 
 ## Reference Update Policy
 
-Directory and file renames must update safe references in code before the next rename phase continues.
+Directory, file, and symbol renames must update safe references in code before the next rename phase continues.
 
-When renaming a directory, the scanner should prefer language-server-backed or equivalent language-aware rename support so references update automatically where the ecosystem can provide it. The scanner should only fall back to narrower path-reference rewriting when a language server or similarly safe refactoring backend is not available.
+For all rename phases, the scanner should prefer language-server-backed or equivalent language-aware rename support so references update automatically where the ecosystem can provide it. The scanner should only fall back to narrower rewriting when a language server or similarly safe refactoring backend is not available.
 
 Reference update coverage includes, when safely rewritable:
 
@@ -167,7 +169,7 @@ Reference update coverage includes, when safely rewritable:
 - require paths
 - relative source references
 
-Path updates are part of directory and file rename execution, not a separate reporting-only phase.
+Reference updates are part of rename execution, not a separate reporting-only phase.
 
 ## Order Of Operations
 
@@ -191,12 +193,18 @@ The scanner must execute phases in this order:
 4. Detect which supported languages are present in the cloned repository
    - A single repository may contain any mix of PHP, C++, and JavaScript
 5. Rename files one by one
+   - Prefer language-server-backed reference updates before falling back to narrower path rewriting
    - Update safe path references after each file rename
 6. Rename namespace or module-like symbols if the conventions schema defines them and the selected backend can do this safely
+   - Prefer language-server-backed or equivalent language-aware renames
 7. Rename class or type-like symbols
+   - Prefer language-server-backed or equivalent language-aware renames
 8. Rename function or method-like symbols
+   - Prefer language-server-backed or equivalent language-aware renames
 9. Rename variable-like symbols
+   - Prefer language-server-backed or equivalent language-aware renames
 10. Rename constant or enum-like symbols if the conventions schema defines them and the selected backend can do this safely
+   - Prefer language-server-backed or equivalent language-aware renames
 11. Run `clang-format` across the full repository set of supported files
 12. Re-scan the final tree
    - Report remaining naming violations against final names and final paths
