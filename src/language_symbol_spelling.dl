@@ -1,0 +1,20 @@
+local function character {integer:value} starts an explicit symbol identifier:
+    execute:
+        return value = 36 or (value = 95 or ((value >= 65 and value <= 90) or ((value >= 97 and value <= 122) or value >= 128)))
+
+local function character {integer:value} continues an explicit symbol identifier:
+    execute:
+        return character value starts an explicit symbol identifier or (value >= 48 and value <= 57)
+
+function symbol spelling {string:name} is an explicit identifier:
+    execute:
+        if the length of name = 0:
+            return false
+        if the inverse of (character (the character at 0 in name as a 32 bit integer) starts an explicit symbol identifier):
+            return false
+        set position to 1
+        loop while position < the length of name:
+            if the inverse of (character (the character at position in name as a 32 bit integer) continues an explicit symbol identifier):
+                return false
+            set position to position + 1
+        return true

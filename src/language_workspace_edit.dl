@@ -1,0 +1,23 @@
+import lib/lsp.dl
+
+function workspace edit {a pointer to a JSON value:edit} has operations:
+    execute:
+        if edit is not a JSON object:
+            return false
+        if edit has JSON member named "documentChanges":
+            set document_changes to the JSON member named "documentChanges" in edit
+            if document_changes is a JSON array:
+                if the number of JSON items in document_changes > 0:
+                    return true
+        if edit has JSON member named "changes":
+            set changes to the JSON member named "changes" in edit
+            if changes is a JSON object:
+                set position to 0
+                loop while position < the number of JSON members in changes:
+                    set member to the item at position in (changes's members)
+                    set edits to member's value
+                    if edits is a JSON array:
+                        if the number of JSON items in edits > 0:
+                            return true
+                    set position to position + 1
+        return false

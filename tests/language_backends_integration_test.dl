@@ -15,7 +15,7 @@ write the string form of "<?php\nclass Sample { public function badFunction($val
 expect truth it succeeded
 
 set cpp_path to repository path from root and "sample.cpp"
-write the string form of "int bad_function(int value){return value;}\n" to the file at cpp_path
+write the string form of "int bad_function(int value){return value;}\nclass TextDocument { public: void rebuildLineOffsets() {} void BadMethod() {} };\n" to the file at cpp_path
 expect truth it succeeded
 
 set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      function: snake_case\n      class: PascalCase\n      file: snake_case\n    cpp:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n    javascript:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n"
@@ -75,6 +75,13 @@ expect truth cpp_found's candidate's found
 expect cpp_found's candidate's replacement to equal "badFunction"
 set cpp_renamed to apply symbol rename cpp_found's candidate through cpp_session
 expect truth cpp_renamed's succeeded
+set cpp_qualified_found to find next "function" violation through cpp_session in tree with rules
+expect truth cpp_qualified_found's succeeded
+expect truth cpp_qualified_found's candidate's found
+expect cpp_qualified_found's candidate's name to equal "BadMethod"
+expect cpp_qualified_found's candidate's replacement to equal "badMethod"
+set cpp_qualified_renamed to apply symbol rename cpp_qualified_found's candidate through cpp_session
+expect truth cpp_qualified_renamed's succeeded
 set cpp_finished to finish language session cpp_session
 expect truth cpp_finished's succeeded
 free language backend cpp_backend
@@ -91,6 +98,11 @@ expect truth (php_source's contents contains "public function bad_function")
 read the file at cpp_path and set cpp_source to it
 expect truth (cpp_source succeeded)
 expect truth (cpp_source's contents contains "int badFunction")
+expect truth (cpp_source's contents contains "void rebuildLineOffsets")
+expect truth (cpp_source's contents contains "void badMethod")
+
+write the string form of "int badFunction(int value){return value;}\n" to the file at cpp_path
+expect truth it succeeded
 
 delete the filesystem entry at javascript_path
 expect truth it succeeded
@@ -99,7 +111,7 @@ expect truth it succeeded
 set cpp_backend to the default language backend for "cpp"
 set cpp_backends to an empty list of a pointer to language backend
 append cpp_backend to cpp_backends
-set formatted to enforce conventions in working copy root for repository "demo" using rules and cpp_backends, applying fixes true
+set formatted to enforce conventions in working copy root for repository "demo" using rules and cpp_backends with git "git", applying fixes true
 expect truth (formatted's succeeded)
 expect truth (formatted's changed)
 expect the length of formatted's report's fixes to equal 1

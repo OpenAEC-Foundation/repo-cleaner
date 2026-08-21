@@ -1,5 +1,7 @@
 import conventions.dl
 import scanner.dl
+import language_symbol_spelling.dl
+import language_workspace_edit.dl
 import lib/lsp.dl
 import lib/workspace_edit.dl
 
@@ -48,12 +50,25 @@ class:
 
 class:
     patterns:
+        [a|the|] symbol rename result
+    members:
+        succeeded as boolean
+        changed as boolean
+        refused as boolean
+        description as string
+        error message as string
+
+class:
+    patterns:
         [a|the|] language session
     members:
         backend as a pointer to language backend
         root as string
         client as a pointer to LSP client
         active document URI as string
+        symbol search category as string
+        symbol search position as integer
+        excluded symbol candidates as a pointer to list
 
 class:
     patterns:
@@ -80,6 +95,7 @@ local class:
         line as a 32 bit integer
         character as a 32 bit integer
         error message as string
+        excluded candidates as a pointer to list
 
 local function an allocated language backend named {string:language} using {string:executable} with {a pointer to list:arguments}, waiting for {string:progress_title}, loading documents for path renames {boolean:loads_documents}, and using path rename preparation {boolean:uses_preparation}:
     execute:
@@ -117,6 +133,7 @@ function [the|] default language backend for {string:language}:
         set executable to the string form of ""
         if language = "cpp":
             set executable to the string form of "clangd"
+            append the string form of "--log=error" to arguments
         else if language = "php":
             set executable to the string form of "phpactor"
             append the string form of "language-server" to arguments
@@ -227,63 +244,48 @@ local function start {a pointer to language backend:backend} in {string:root}:
         free client_features
         return started
 
-function receive reply to {JSON-RPC send result:sent} from {a pointer to an LSP client:client}:
-    execute:
-        set attempts to 0
-        loop while attempts < 32:
-            set answer to the LSP response for sent's request identifier using client waiting up to 20000 milliseconds
-            if answer succeeded:
-                return answer
-            if answer's status != the JSON-RPC server request pending status:
-                return answer
-            free answer
-            set request to the next LSP server request from client
-            if request failed:
-                return @intrinsic(
-                    "construct",
-                    a JSON-RPC response,
-                    false,
-                    the JSON-RPC protocol error status,
-                    0 as a pointer to a JSON value,
-                    0 as a pointer to a JSON value,
-                    0,
-                    the string form of "",
-                    the string form of "",
-                    0 as a pointer to a JSON value,
-                    request's error message
-                )
-            set null_result to a new JSON-RPC null
-            set replied to the result of replying to request's message from the LSP server with null_result using client
-            free null_result
-            free request
-            if replied failed:
-                return @intrinsic(
-                    "construct",
-                    a JSON-RPC response,
-                    false,
-                    replied's status,
-                    0 as a pointer to a JSON value,
-                    0 as a pointer to a JSON value,
-                    0,
-                    the string form of "",
-                    the string form of "",
-                    0 as a pointer to a JSON value,
-                    replied's error message
-                )
-            set attempts to attempts + 1
-        return @intrinsic(
+local function a failed received LSP response with status {integer:status} reporting {string:detail}:
+    replacement:
+        @intrinsic(
             "construct",
             a JSON-RPC response,
             false,
-            the JSON-RPC limit exceeded status,
+            status,
             0 as a pointer to a JSON value,
             0 as a pointer to a JSON value,
             0,
             the string form of "",
             the string form of "",
             0 as a pointer to a JSON value,
-            the string form of "Language server sent too many requests while a response was pending"
+            detail
         )
+
+function receive reply to {JSON-RPC send result:sent} from {a pointer to an LSP client:client}:
+    execute:
+        set waiting to true
+        loop while waiting:
+            set answer to the queued LSP response for sent's request identifier using client
+            if answer succeeded or answer's status != the JSON-RPC queue empty status:
+                return answer
+            free answer
+
+            set pumped to the result of pumping one LSP message using client waiting up to 20000 milliseconds
+            if pumped failed:
+                return a failed received LSP response with status pumped's status reporting pumped's error message
+            set discarded_error to take the LSP standard error from client
+
+            set request to the next LSP server request from client
+            if request succeeded:
+                set null_result to a new JSON-RPC null
+                set replied to the result of replying to request's message from the LSP server with null_result using client
+                free null_result
+                free request
+                if replied failed:
+                    return a failed received LSP response with status replied's status reporting replied's error message
+
+            set notification to the next LSP notification from client
+            if notification succeeded:
+                free notification
 
 local function stop {a pointer to an LSP client:client}:
     execute:
@@ -320,6 +322,7 @@ local function wait for workspace progress {string:progress_title} through {a po
                     the string form of "",
                     pumped's error message
                 )
+            set discarded_error to take the LSP standard error from client
 
             set request to the next LSP server request from client
             if request succeeded:
@@ -447,12 +450,16 @@ function begin language session using {a pointer to language backend:backend} in
             backend,
             root,
             started's client,
-            the string form of ""
+            the string form of "",
+            the string form of "",
+            0,
+            an empty list of symbol candidate
         )
         allocate one slot of initial and set active_session to it
         set ready to wait for workspace progress backend's initialization progress title through active_session's client
         if the inverse of ready's succeeded:
             set stopped to stop active_session's client
+            free active_session's excluded symbol candidates
             @intrinsic("destroy at", active_session)
             @intrinsic("call", "libc", "free", nothing, active_session)
             return @intrinsic(
@@ -534,6 +541,7 @@ function finish language session {a pointer to language session:session}:
         set closed to close active document through session
         set client to session's client
         set outcome to stop client
+        free session's excluded symbol candidates
         @intrinsic("destroy at", session)
         @intrinsic("call", "libc", "free", nothing, session)
         if the inverse of closed's succeeded:
@@ -560,28 +568,6 @@ local function {a pointer to an LSP client:client} prepares symbol renames:
         if the kind of preparation != the JSON boolean kind:
             return false
         return the boolean of preparation
-
-function workspace edit {a pointer to a JSON value:edit} has operations:
-    execute:
-        if edit is not a JSON object:
-            return false
-        if edit has JSON member named "documentChanges":
-            set document_changes to the JSON member named "documentChanges" in edit
-            if document_changes is a JSON array:
-                if the number of JSON items in document_changes > 0:
-                    return true
-        if edit has JSON member named "changes":
-            set changes to the JSON member named "changes" in edit
-            if changes is a JSON object:
-                set position to 0
-                loop while position < the number of JSON members in changes:
-                    set member to the item at position in (changes's members)
-                    set edits to member's value
-                    if edits is a JSON array:
-                        if the number of JSON items in edits > 0:
-                            return true
-                    set position to position + 1
-        return false
 
 local function category for symbol kind {integer:kind}:
     execute:
@@ -612,6 +598,35 @@ local function mark malformed symbol response {string:message} in {a pointer to 
     execute:
         set state's malformed to true
         set state's error message to message
+
+local function convention spelling for {string:reported} in {a pointer to symbol search state:state}:
+    execute:
+        if state's language != "cpp":
+            return reported
+        set beginning to 0
+        set position to 0
+        loop while position + 1 < the length of reported:
+            if the character at position in reported = 58 and the character at position + 1 in reported = 58:
+                set beginning to position + 2
+            set position to position + 1
+        set name to the substring of reported from beginning spanning (the length of reported - beginning) bytes
+        if name has "operator" at offset 0:
+            return the string form of ""
+        if the length of name > 0:
+            if the character at 0 in name = 126:
+                return the string form of ""
+        return name
+
+local function symbol {string:name} in {string:category} at line {integer:line} character {integer:character} is excluded by {a pointer to symbol search state:state}:
+    execute:
+        set excluded_candidates to state's excluded candidates
+        set position to 0
+        loop while position < the length of excluded_candidates:
+            set candidate to @intrinsic("cast", the item at position in excluded_candidates, a symbol candidate)
+            if candidate's uri = state's uri and (candidate's category = category and (candidate's name = name and (candidate's line as an integer = line and candidate's character as an integer = character))):
+                return true
+            set position to position + 1
+        return false
 
 local function inspect symbol {a pointer to a JSON value:symbol} using {a pointer to symbol search state:state}:
     execute:
@@ -656,8 +671,13 @@ local function inspect symbol {a pointer to a JSON value:symbol} using {a pointe
             @intrinsic("return")
 
         set symbol_category to category for symbol kind (the number of kind_node as an integer)
-        set symbol_name to the text of name_node
-        if symbol_category = state's category and the inverse of (symbol_name follows state's case style):
+        set reported_name to the text of name_node
+        set symbol_name to convention spelling for reported_name in state
+        set explicit_identifier to symbol spelling symbol_name is an explicit identifier
+        set symbol_line to the number of line_node as a 32 bit integer
+        set symbol_character to the number of character_node as a 32 bit integer
+        set excluded to symbol symbol_name in symbol_category at line (symbol_line as an integer) character (symbol_character as an integer) is excluded by state
+        if explicit_identifier and ((symbol_category = state's category) and (the inverse of excluded and the inverse of (symbol_name follows state's case style))):
             set replacement to convert symbol_name to state's case style
             if the length of replacement = 0:
                 set message to (the string form of "No safe case conversion is available for symbol ")
@@ -667,8 +687,8 @@ local function inspect symbol {a pointer to a JSON value:symbol} using {a pointe
             set state's found to true
             set state's name to symbol_name
             set state's replacement to replacement
-            set state's line to the number of line_node as a 32 bit integer
-            set state's character to the number of character_node as a 32 bit integer
+            set state's line to symbol_line
+            set state's character to symbol_character
             @intrinsic("return")
 
         if symbol has JSON member named "children":
@@ -716,7 +736,8 @@ local function search state for {string:category} case {integer:case_style} in {
             the string form of "",
             0,
             0,
-            the string form of ""
+            the string form of "",
+            0 as a pointer to list
         )
         allocate one slot of initial and set allocated_state to it
         return allocated_state
@@ -740,10 +761,13 @@ function find next {string:category} violation through {a pointer to language se
             return @intrinsic("construct", a symbol search result, true, an empty symbol candidate, the string form of "")
 
         set entries to tree's entries
-        set position to 0
+        if session's symbol search category != category:
+            set session's symbol search category to category
+            set session's symbol search position to 0
+        set position to session's symbol search position
         loop while position < the length of entries:
             set entry to @intrinsic("cast", the item at position in entries, a repository entry)
-            if the inverse of entry's directory and entry's language = backend_language:
+            if the inverse of entry's directory and (entry's language = backend_language and entry's supports symbol analysis):
                 read the file at entry's absolute path and set read_result to it
                 if read_result failed:
                     return failed symbol search read_result's error message
@@ -767,6 +791,7 @@ function find next {string:category} violation through {a pointer to language se
                     return failed symbol search message
 
                 set state to search state for category case case_style in entry with uri_result's value
+                set state's excluded candidates to session's excluded symbol candidates
                 inspect symbols response's result using state
                 free response
                 if state's malformed:
@@ -795,8 +820,15 @@ function find next {string:category} violation through {a pointer to language se
                 if the inverse of closed's succeeded:
                     return failed symbol search closed's error message
             set position to position + 1
+            set session's symbol search position to position
 
         return @intrinsic("construct", a symbol search result, true, an empty symbol candidate, the string form of "")
+
+function exclude symbol rename {symbol candidate:candidate} through {a pointer to language session:session}:
+    execute:
+        if the inverse of candidate's found:
+            @intrinsic("call", "libc", "abort", nothing)
+        append candidate to session's excluded symbol candidates
 
 function find next {string:category} violation using {a pointer to language backend:backend} in {a pointer to repository tree:tree} with {a pointer to conventions:rules}:
     execute:
@@ -811,6 +843,42 @@ function find next {string:category} violation using {a pointer to language back
             return failed symbol search finished's error message
         return found
 
+local function a failed symbol rename changed {boolean:changed} reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a symbol rename result,
+            false,
+            changed,
+            false,
+            the string form of "",
+            message
+        )
+
+local function a refused symbol rename reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a symbol rename result,
+            false,
+            false,
+            true,
+            the string form of "",
+            message
+        )
+
+local function a successful symbol rename described by {string:description}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a symbol rename result,
+            true,
+            true,
+            false,
+            description,
+            the string form of ""
+        )
+
 function apply symbol rename {symbol candidate:candidate} through {a pointer to language session:session}:
     execute:
         if the inverse of candidate's found:
@@ -820,10 +888,10 @@ function apply symbol rename {symbol candidate:candidate} through {a pointer to 
 
         read the file at candidate's file path and set read_result to it
         if read_result failed:
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", read_result's error message)
+            return a failed symbol rename changed false reporting read_result's error message
         set opened to open document candidate's uri with language candidate's language and text read_result's contents through session
         if the inverse of opened's succeeded:
-            return opened
+            return a failed symbol rename changed opened's changed reporting opened's error message
 
         if client prepares symbol renames:
             set preparation_parameters to a new JSON-RPC object
@@ -832,15 +900,18 @@ function apply symbol rename {symbol candidate:candidate} through {a pointer to 
             set preparation_sent to the result of sending an LSP request "textDocument/prepareRename" with preparation_parameters using client
             free preparation_parameters
             if preparation_sent failed:
-                return @intrinsic("construct", a language operation result, false, false, the string form of "", preparation_sent's error message)
+                return a failed symbol rename changed false reporting preparation_sent's error message
             set preparation_response to receive reply to preparation_sent from client
             if preparation_response failed:
                 set message to error reported by preparation_response
+                set refused to preparation_response's status = the JSON-RPC remote error status
                 free preparation_response
-                return @intrinsic("construct", a language operation result, false, false, the string form of "", message)
+                if refused:
+                    return a refused symbol rename reporting message
+                return a failed symbol rename changed false reporting message
             if preparation_response's result is JSON null:
                 free preparation_response
-                return @intrinsic("construct", a language operation result, false, false, the string form of "", the string form of "Language server cannot safely rename this symbol")
+                return a refused symbol rename reporting the string form of "Language server cannot safely rename this symbol"
             free preparation_response
 
         set parameters to a new JSON-RPC object
@@ -850,36 +921,39 @@ function apply symbol rename {symbol candidate:candidate} through {a pointer to 
         set sent to the result of sending an LSP request "textDocument/rename" with parameters using client
         free parameters
         if sent failed:
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", sent's error message)
+            return a failed symbol rename changed false reporting sent's error message
         set response to receive reply to sent from client
         if response failed:
             set message to error reported by response
+            set refused to response's status = the JSON-RPC remote error status
             free response
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", message)
+            if refused:
+                return a refused symbol rename reporting message
+            return a failed symbol rename changed false reporting message
         if response's result is JSON null:
             free response
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", the string form of "Language server rejected the symbol rename")
+            return a refused symbol rename reporting the string form of "Language server rejected the symbol rename"
         set proposed_edit to response's result
         if the inverse of (workspace edit proposed_edit has operations):
             free response
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", the string form of "Language server returned no changes for the symbol rename")
+            return a refused symbol rename reporting the string form of "Language server returned no changes for the symbol rename"
         set edit_text to the compact JSON form of response's result
         free response
 
         set context_result to the result of creating a workspace edit context rooted at root
         if context_result failed:
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", context_result's failure reason)
+            return a failed symbol rename changed false reporting context_result's failure reason
         set context to context_result's context
         set recorded to the result of opening workspace document candidate's uri with text read_result's contents at version 1 in context
         if recorded failed:
             set message to recorded's failure reason
             free context
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", message)
+            return a failed symbol rename changed false reporting message
         set applied to the result of applying workspace edit edit_text using context
         if applied was not applied:
             set message to applied's failure reason
             free context
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", message)
+            return a failed symbol rename changed false reporting message
         set open_documents to context's documents
         if the length of open_documents != 1:
             @intrinsic("call", "libc", "abort", nothing)
@@ -891,30 +965,30 @@ function apply symbol rename {symbol candidate:candidate} through {a pointer to 
         if persisted failed:
             set message to persisted's error message
             free context
-            return @intrinsic("construct", a language operation result, false, true, the string form of "", message)
+            return a failed symbol rename changed true reporting message
         free context
 
         set synchronized to the result of replacing LSP document uri candidate's uri with text updated_text using client
         if synchronized failed:
-            return @intrinsic("construct", a language operation result, false, true, the string form of "", synchronized's error message)
+            return a failed symbol rename changed true reporting synchronized's error message
         set closed to close active document through session
         if the inverse of closed's succeeded:
-            return @intrinsic("construct", a language operation result, false, true, the string form of "", closed's error message)
+            return a failed symbol rename changed true reporting closed's error message
 
         set description to candidate's relative path + the string form of ": "
         set description to description + candidate's name
         set description to description + the string form of " -> "
         set description to description + candidate's replacement
-        return @intrinsic("construct", a language operation result, true, true, description, the string form of "")
+        return a successful symbol rename described by description
 
 function apply symbol rename {symbol candidate:candidate} using {a pointer to language backend:backend} in {string:root}:
     execute:
         set begun to begin language session using backend in root
         if the inverse of begun's succeeded:
-            return @intrinsic("construct", a language operation result, false, false, the string form of "", begun's error message)
+            return a failed symbol rename changed false reporting begun's error message
         set active_session to begun's session
         set renamed to apply symbol rename candidate through active_session
         set finished to finish language session active_session
         if the inverse of finished's succeeded:
-            return @intrinsic("construct", a language operation result, false, renamed's changed, renamed's description, finished's error message)
+            return a failed symbol rename changed renamed's changed reporting finished's error message
         return renamed

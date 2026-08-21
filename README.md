@@ -12,6 +12,8 @@ The convention enforcer is written in DynLex. It checks organization repositorie
 - The standard `LICENSE.md`
 - Empty repositories
 
+Hidden metadata, dependency-owned `node_modules`, `vendor`, and `third_party` trees, and generated `dist` trees are excluded from convention fixes and size findings. C++ symbol fixes require a root `compile_commands.json`; JavaScript symbol fixes require a root `jsconfig.json` or `tsconfig.json`. Without project-wide index input, symbol violations remain report-only.
+
 Safe code fixes run in a temporary clone. The enforcer asks one language server per detected language to update references, applies live renames one at a time, formats C++ sources with `clang-format`, and refreshes the repository tree after structural changes. Directory renames are prepared by every active language server before mutation. Servers with `workspace/didRenameFiles` stay active after the notification; a server that only implements `workspace/willRenameFiles` is shut down and recreated after the rename. A path violation remains report-only when any required server cannot safely prepare it. The enforcer publishes code fixes to `repo-cleaner/convention-fixes` and creates, updates, or closes one scanner-owned pull request.
 
 Repository naming and empty-repository findings use exact-title pinned issues. Four-or-more-segment repository names are left for manual review.
@@ -27,7 +29,7 @@ Repository naming and empty-repository findings use exact-title pinned issues. F
 
 The reusable GitHub Actions workflow checks out and builds the required DynLex and LLVM revisions itself. Stock clangd does not implement the file-operation protocol required for reference-safe directory renames.
 
-The installed TypeScript language server advertises `willRenameFiles` but not `didRenameFiles`, so JavaScript paths are renamed from its prepared workspace edit and the server is recreated before later operations. Phpactor's file-operation implementation is not complete enough for safe path changes, so PHP path violations remain report-only. JavaScript and PHP symbol renames continue to use their language servers. The enforcer never falls back to a reference-unsafe filesystem rename.
+The installed TypeScript language server advertises `willRenameFiles` but not `didRenameFiles`, so JavaScript paths are renamed from its prepared workspace edit and the server is recreated before later operations. Phpactor's file-operation implementation is not complete enough for safe path changes, so PHP path violations remain report-only. JavaScript symbol renames use the TypeScript language server when a root project configuration is present; PHP symbol renames continue to use Phpactor. The enforcer never falls back to a reference-unsafe filesystem rename.
 
 ## Build and test
 
@@ -37,6 +39,8 @@ The installed TypeScript language server advertises `willRenameFiles` but not `d
 ```
 
 Set `DYNLEX=/path/to/dynlex` when the compiler is not on `PATH`. Put the required OpenAEC clangd ahead of any stock clangd on `PATH` when running path-backend integration tests or applying C++ path fixes.
+
+C++ symbol fixes require a readable `compile_commands.json` at the repository root, and JavaScript symbol fixes require a root `jsconfig.json` or `tsconfig.json`. Without project-wide index input, symbol violations remain report-only because the language server cannot prove that a workspace edit covers cross-file references.
 
 ## Usage
 

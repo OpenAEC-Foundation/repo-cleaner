@@ -23,7 +23,7 @@ append backend to backends
 
 set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      file: snake_case\n"
 expect truth loaded's succeeded
-set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends, applying fixes true
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends with git "git", applying fixes true
 expect truth enforced's succeeded
 expect truth enforced's changed
 expect the length of enforced's report's fixes to equal 2
@@ -42,5 +42,147 @@ free backends
 free language backend backend
 remove the filesystem tree at root
 expect truth (it succeeded)
+
+create a temporary directory
+set unindexed_temporary to it
+expect truth unindexed_temporary succeeded
+set unindexed_root to unindexed_temporary's directory path
+set unindexed_source to repository path from unindexed_root and "sample.cpp"
+set unindexed_contents to the string form of "int bad_function() { return 0; }\n"
+write unindexed_contents to the file at unindexed_source
+expect truth it succeeded
+set unindexed_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True,'renameProvider':True}}});assert read()['method']=='initialized';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set unindexed_arguments to an empty list of string
+append the string form of "-u" to unindexed_arguments
+append the string form of "-c" to unindexed_arguments
+append unindexed_script to unindexed_arguments
+set unindexed_backend to a language backend named "cpp" using "python3" with unindexed_arguments
+set unindexed_backends to an empty list of a pointer to language backend
+append unindexed_backend to unindexed_backends
+set unindexed_loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    cpp:\n      function: camelCase\n      file: camelCase\n"
+expect truth unindexed_loaded's succeeded
+set unindexed_enforced to enforce conventions in working copy unindexed_root for repository "demo" using unindexed_loaded's conventions and unindexed_backends with git "git", applying fixes true
+expect truth unindexed_enforced's succeeded
+expect falsehood unindexed_enforced's changed
+expect the length of unindexed_enforced's report's fixes to equal 0
+expect the length of unindexed_enforced's report's remaining violations to equal 1
+expect the item at 0 in unindexed_enforced's report's remaining violations to equal "C++ symbol conventions require a root compile_commands.json; symbol renames were not attempted"
+read the file at unindexed_source and set unindexed_after to it
+expect truth unindexed_after succeeded
+expect unindexed_after's contents to equal unindexed_contents
+free convention enforcement result unindexed_enforced
+free conventions result unindexed_loaded
+free unindexed_backends
+free language backend unindexed_backend
+remove the filesystem tree at unindexed_root
+expect truth it succeeded
+
+create a temporary directory
+set unindexed_javascript_temporary to it
+expect truth unindexed_javascript_temporary succeeded
+set unindexed_javascript_root to unindexed_javascript_temporary's directory path
+set unindexed_javascript_source to repository path from unindexed_javascript_root and "sample.js"
+write the string form of "function BadFunction() { return 0; }\n" to the file at unindexed_javascript_source
+expect truth it succeeded
+set unindexed_javascript_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True,'renameProvider':True}}});assert read()['method']=='initialized';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set unindexed_javascript_arguments to an empty list of string
+append the string form of "-u" to unindexed_javascript_arguments
+append the string form of "-c" to unindexed_javascript_arguments
+append unindexed_javascript_script to unindexed_javascript_arguments
+set unindexed_javascript_backend to a language backend named "javascript" using "python3" with unindexed_javascript_arguments
+set unindexed_javascript_backends to a list containing unindexed_javascript_backend
+set unindexed_javascript_loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      file: snake_case\n"
+expect truth unindexed_javascript_loaded's succeeded
+set unindexed_javascript_enforced to enforce conventions in working copy unindexed_javascript_root for repository "demo" using unindexed_javascript_loaded's conventions and unindexed_javascript_backends with git "git", applying fixes true
+expect truth unindexed_javascript_enforced's succeeded
+expect falsehood unindexed_javascript_enforced's changed
+expect the length of unindexed_javascript_enforced's report's fixes to equal 0
+expect the length of unindexed_javascript_enforced's report's remaining violations to equal 1
+expect the item at 0 in unindexed_javascript_enforced's report's remaining violations to equal "JavaScript symbol conventions require a root jsconfig.json or tsconfig.json; symbol renames were not attempted"
+free convention enforcement result unindexed_javascript_enforced
+free conventions result unindexed_javascript_loaded
+free unindexed_javascript_backends
+free language backend unindexed_javascript_backend
+remove the filesystem tree at unindexed_javascript_root
+expect truth it succeeded
+
+create a temporary directory
+set ignored_temporary to it
+expect truth ignored_temporary succeeded
+set ignored_root to ignored_temporary's directory path
+set git_arguments to a list containing (the string form of "init")
+set initialized to run tool "git" with git_arguments in ignored_root
+free git_arguments
+expect truth initialized's succeeded
+set ignored_source to repository path from ignored_root and "ARefused.js"
+write the string form of "export const value = 1;\n" to the file at ignored_source
+expect truth it succeeded
+set accepted_source to repository path from ignored_root and "ZAccepted.js"
+write the string form of "export const accepted = 1;\n" to the file at accepted_source
+expect truth it succeeded
+write the string form of "a_refused.js\n" to the file at (repository path from ignored_root and ".gitignore")
+expect truth it succeeded
+set ignored_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';request=read();assert request['method']=='workspace/willRenameFiles';change=request['params']['files'][0];assert change['oldUri'].endswith('/ZAccepted.js') and change['newUri'].endswith('/z_accepted.js');send({'jsonrpc':'2.0','id':request['id'],'result':None});assert read()['method']=='workspace/didRenameFiles';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set ignored_arguments to an empty list of string
+append the string form of "-u" to ignored_arguments
+append the string form of "-c" to ignored_arguments
+append ignored_script to ignored_arguments
+set ignored_backend to a language backend named "javascript" using "python3" with ignored_arguments
+set ignored_backends to an empty list of a pointer to language backend
+append ignored_backend to ignored_backends
+set ignored_loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      file: snake_case\n"
+expect truth ignored_loaded's succeeded
+set ignored_enforced to enforce conventions in working copy ignored_root for repository "demo" using ignored_loaded's conventions and ignored_backends with git "git", applying fixes true
+expect truth ignored_enforced's succeeded
+expect truth ignored_enforced's changed
+expect the length of ignored_enforced's report's fixes to equal 1
+expect the item at 0 in ignored_enforced's report's fixes to equal "ZAccepted.js -> z_accepted.js"
+expect the length of ignored_enforced's report's remaining violations to equal 1
+expect the item at 0 in ignored_enforced's report's remaining violations to equal "ARefused.js -> a_refused.js (not safely preparable: Rename target is ignored by repository rules: a_refused.js)"
+set ignored_source_entry to the file system entry at ignored_source
+expect truth ignored_source_entry is a regular file
+set accepted_target_entry to the file system entry at (repository path from ignored_root and "z_accepted.js")
+expect truth accepted_target_entry is a regular file
+free convention enforcement result ignored_enforced
+free conventions result ignored_loaded
+free ignored_backends
+free language backend ignored_backend
+remove the filesystem tree at ignored_root
+expect truth it succeeded
+
+create a temporary directory
+set symbol_temporary to it
+expect truth symbol_temporary succeeded
+set symbol_root to symbol_temporary's directory path
+set symbol_source to repository path from symbol_root and "sample.js"
+write the string form of "function BadFirst() { return 1; }\nfunction BadSecond() { return 2; }\n" to the file at symbol_source
+expect truth it succeeded
+write the string form of "{}\n" to the file at (repository path from symbol_root and "jsconfig.json")
+expect truth it succeeded
+set symbol_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ndef symbol(name,line,end): return {'name':name,'kind':12,'range':{'start':{'line':line,'character':0},'end':{'line':line,'character':34}},'selectionRange':{'start':{'line':line,'character':9},'end':{'line':line,'character':end}}}\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True,'renameProvider':{'prepareProvider':True}}}});assert read()['method']=='initialized';renamed=False\nwhile True:\n m=read();method=m.get('method','')\n if method=='shutdown': send({'jsonrpc':'2.0','id':m['id'],'result':None});break\n if method=='textDocument/documentSymbol': send({'jsonrpc':'2.0','id':m['id'],'result':[symbol('BadFirst',0,17),symbol('badSecond' if renamed else 'BadSecond',1,18)]})\n elif method=='textDocument/prepareRename':\n  if m['params']['position']['line']==0: send({'jsonrpc':'2.0','id':m['id'],'error':{'code':-32603,'message':'intentional symbol refusal'}})\n  else: send({'jsonrpc':'2.0','id':m['id'],'result':{'range':{'start':{'line':1,'character':9},'end':{'line':1,'character':18}}}})\n elif method=='textDocument/rename':\n  uri=m['params']['textDocument']['uri'];send({'jsonrpc':'2.0','id':m['id'],'result':{'changes':{uri:[{'range':{'start':{'line':1,'character':9},'end':{'line':1,'character':18}},'newText':'badSecond'}]}}})\n elif method=='textDocument/didChange': renamed=True\nassert read()['method']=='exit'"
+set symbol_arguments to an empty list of string
+append the string form of "-u" to symbol_arguments
+append the string form of "-c" to symbol_arguments
+append symbol_script to symbol_arguments
+set symbol_backend to a language backend named "javascript" using "python3" with symbol_arguments
+set symbol_backends to a list containing symbol_backend
+set symbol_loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      file: snake_case\n"
+expect truth symbol_loaded's succeeded
+set symbol_enforced to enforce conventions in working copy symbol_root for repository "demo" using symbol_loaded's conventions and symbol_backends with git "git", applying fixes true
+expect truth symbol_enforced's succeeded
+expect truth symbol_enforced's changed
+expect the length of symbol_enforced's report's fixes to equal 1
+expect the item at 0 in symbol_enforced's report's fixes to equal "sample.js: BadSecond -> badSecond"
+expect the length of symbol_enforced's report's remaining violations to equal 1
+expect the item at 0 in symbol_enforced's report's remaining violations to equal "sample.js: BadFirst -> badFirst (not safely renamable: intentional symbol refusal)"
+read the file at symbol_source and set symbol_after to it
+expect truth symbol_after succeeded
+expect symbol_after's contents to equal "function BadFirst() { return 1; }\nfunction badSecond() { return 2; }\n"
+free convention enforcement result symbol_enforced
+free conventions result symbol_loaded
+free symbol_backends
+free language backend symbol_backend
+remove the filesystem tree at symbol_root
+expect truth it succeeded
 
 print "enforcer: passed" as a line

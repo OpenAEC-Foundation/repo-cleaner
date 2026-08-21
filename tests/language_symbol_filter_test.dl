@@ -1,0 +1,42 @@
+import support.dl
+import ../src/language_server.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+set generated_path to repository path from root and "a_generated.js"
+write (the string form of "x") repeated 5000 times to the file at generated_path
+expect truth it succeeded
+set source_path to repository path from root and "sample.js"
+write the string form of "function BadFunction() { return 1; }\n" to the file at source_path
+expect truth it succeeded
+
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ndef symbol(name,start,end): return {'name':name,'kind':12,'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':40}},'selectionRange':{'start':{'line':0,'character':start},'end':{'line':0,'character':end}}}\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True}}});assert read()['method']=='initialized';opened=read();assert opened['method']=='textDocument/didOpen' and opened['params']['textDocument']['uri'].endswith('/sample.js');request=read();assert request['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':request['id'],'result':[symbol('uniforms.map() callback',0,23),symbol('BadFunction',9,20)]});assert read()['method']=='textDocument/didClose';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set arguments to an empty list of string
+append the string form of "-u" to arguments
+append the string form of "-c" to arguments
+append script to arguments
+set backend to a language backend named "javascript" using "python3" with arguments
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      file: snake_case\n"
+expect truth loaded's succeeded
+set scanned to scan repository tree at root
+expect truth scanned's succeeded
+set begun to begin language session using backend in root
+expect truth begun's succeeded
+set found to find next "function" violation through begun's session in scanned's tree with loaded's conventions
+expect truth found's succeeded
+expect truth found's candidate's found
+expect found's candidate's relative path to equal "sample.js"
+expect found's candidate's name to equal "BadFunction"
+expect found's candidate's replacement to equal "badFunction"
+set finished to finish language session begun's session
+expect truth finished's succeeded
+
+free repository tree result scanned
+free conventions result loaded
+free language backend backend
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "language symbol filter: passed" as a line
