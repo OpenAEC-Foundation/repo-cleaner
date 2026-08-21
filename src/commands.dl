@@ -1,0 +1,78 @@
+import lib/process.dl
+import lib/text.dl
+
+class:
+    patterns:
+        [a|the|] tool result
+    members:
+        launched as boolean
+        succeeded as boolean
+        standard output as string
+        standard error as string
+        exit code as a word sized integer
+        error message as string
+
+local function tool result from {process result:completed}:
+    execute:
+        set successful_exit to completed's launch and completed's success
+        set successful_exit to successful_exit and the inverse of completed's termination
+        set successful_exit to successful_exit and completed's exit code = 0 as a word sized integer
+        set failure_message to the string form of ""
+        if the inverse of successful_exit:
+            if the inverse of completed's launch or the inverse of completed's success:
+                set failure_message to completed's error message
+            else if completed's termination:
+                set failure_message to (the string form of "Process terminated by signal ") + the string form of completed's termination signal
+            else:
+                set failure_message to completed's standard error
+                if the length of failure_message = 0:
+                    set failure_message to (the string form of "Process exited with code ") + the string form of completed's exit code
+        return @intrinsic(
+            "construct",
+            a tool result,
+            completed's launch,
+            successful_exit,
+            completed's standard output,
+            completed's standard error,
+            completed's exit code,
+            failure_message
+        )
+
+local function prepare process command for {string:executable} with {a pointer to list:arguments}:
+    execute:
+        set prepared_command to a process command for executable
+        set position to 0
+        loop while position < the length of arguments:
+            add the item at position in arguments as an argument to prepared_command
+            set position to position + 1
+        return prepared_command
+
+function run tool {string:executable} with {a pointer to list:arguments}:
+    execute:
+        set prepared_command to prepare process command for executable with arguments
+        inherit the environment in prepared_command
+        run prepared_command and set completed to it
+        return tool result from completed
+
+function run tool {string:executable} with {a pointer to list:arguments} in {string:working_directory}:
+    execute:
+        set prepared_command to prepare process command for executable with arguments
+        inherit the environment in prepared_command
+        use working_directory as the working directory of prepared_command
+        run prepared_command and set completed to it
+        return tool result from completed
+
+function run tool {string:executable} with {a pointer to list:arguments} using {string:standard_input}:
+    execute:
+        set prepared_command to prepare process command for executable with arguments
+        inherit the environment in prepared_command
+        run prepared_command using standard_input and set completed to it
+        return tool result from completed
+
+function run tool {string:executable} with {a pointer to list:arguments} in {string:working_directory} using {string:standard_input}:
+    execute:
+        set prepared_command to prepare process command for executable with arguments
+        inherit the environment in prepared_command
+        use working_directory as the working directory of prepared_command
+        run prepared_command using standard_input and set completed to it
+        return tool result from completed

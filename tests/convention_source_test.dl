@@ -1,0 +1,42 @@
+import support.dl
+import ../src/convention_source.dl
+import ../src/scanner.dl
+
+local function make executable {string:path}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "+x" to arguments
+        append path to arguments
+        set completed to run tool "chmod" with arguments
+        free arguments
+        expect truth (completed's succeeded)
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+set fake_gh to repository path from root and "gh"
+set log_path to repository path from root and "requests"
+set script to the string form of "#!/usr/bin/env python3\nimport sys\nwith open('"
+set script to script + log_path
+set script to script + the string form of "','a') as log: log.write('request\\n')\nprint('naming:\\n  repository:\\n    case: kebab-case\\n  directory:\\n    case: snake_case')\n"
+write script to the file at fake_gh
+expect truth it succeeded
+make executable fake_gh
+set tools to github tools using fake_gh and "git"
+
+set first to load the convention source using tools cached in root
+expect truth (first's succeeded)
+expect truth (first's contents contains "repository")
+set second to load the convention source using tools cached in root
+expect truth (second's succeeded)
+expect second's contents to equal first's contents
+read the file at log_path and set requests to it
+expect truth requests succeeded
+expect requests's contents to equal "request\n"
+
+free github tools tools
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "convention source: passed" as a line

@@ -29,11 +29,11 @@ The first version must support repositories that contain any mix of the supporte
 
 ## Design Summary
 
-The system remains Python-first. `repo_conventions_enforcer.py` becomes a thin CLI and orchestration entrypoint, while scanning and GitHub operations move into focused modules.
+The system is implemented in DynLex. `repo_conventions_enforcer.dl` is a thin executable entrypoint, while parsing, scanning, language-server integration, GitHub operations, and reporting live in focused DynLex modules.
 
 The scanner operates on a live temporary clone. It does not calculate a full fix plan up front. Each phase mutates the current repository state, refreshes its view, and continues from the updated structure. This is required because renames change later paths, imports, and symbol references.
 
-Where a language-specific tool can safely own a convention phase, the scanner should use that tool instead of custom text replacement. Python remains responsible for orchestration, execution order, temporary workspace management, and final reporting.
+Where a language-specific tool can safely own a convention phase, the scanner uses that tool instead of custom text replacement. DynLex remains responsible for orchestration, execution order, temporary workspace management, and final reporting.
 
 Across rename phases, the scanner must select one authoritative refactoring backend per rename category and language combination before mutation begins. Once selected, that backend is the only rename mechanism for that phase.
 
@@ -41,49 +41,27 @@ Across rename phases, the scanner must select one authoritative refactoring back
 
 ### Module Layout
 
-- `repo_conventions_enforcer.py`
-  - Thin CLI only
-  - Parses flags
-  - Loads conventions
-  - Dispatches orchestration
-  - Prints terminal summary
-  - Sets final exit code
-- `github.py`
-  - All GitHub and git operations in one place
-  - Remote operations: list repos, rename repo, discover default branch, find or create PR, update PR, close PR
-  - Local operations: clone repo, create/reset scanner branch, commit, push
-- `workspace.py`
-  - Creates and cleans temporary clone directories
-  - Creates and cleans temporary tool config files
-  - Guarantees cleanup even when phases fail
-- `case_checker.py`
-  - Loads convention data
-  - Exposes case patterns and naming rules
-  - Generates suggested names
-- `filesystem_scanner.py`
-  - Detects directory and file naming violations
-  - Applies directory and file renames
-  - Coordinates language-aware reference updates after path changes
-  - Checks the `>1000` line rule
-- `reporting.py`
-  - Builds terminal output
-  - Builds pull request title and body
-  - Summarizes remaining violations and scan failures
-- `languages/base.py`
-  - Shared interface and utilities for language backends
-- `languages/php.py`
-  - PHP symbol discovery and safe rewrites
-- `languages/cpp.py`
-  - C++ symbol discovery and safe rewrites
-  - Uses `clang-tidy` for identifier naming when possible
-  - Uses `clang-format` as post-rewrite cleanup across the full repository set of supported files
-- `languages/javascript.py`
-  - JavaScript symbol discovery and AST-aware rewrites
+- `repo_conventions_enforcer.dl`
+  - Converts host command-line arguments and dispatches the program
+- `src/cli.dl`, `src/program.dl`, `src/manager.dl`
+  - Parse flags, load inputs, process one or many repositories, print summaries, and select the exit code
+- `src/github.dl`
+  - Owns all GitHub and git operations, including issues, pull requests, file updates, clones, branches, commits, and pushes
+- `src/convention_source.dl`, `src/conventions.dl`
+  - Cache, validate, and expose convention patterns and name conversions
+- `src/scanner.dl`
+  - Discovers live repository structure, detects supported languages, selects path renames, and checks the `>1000` line rule
+- `src/language_server.dl`, `src/language_server_paths.dl`
+  - Provide shared LSP-backed symbol, path, and reference updates for PHP, C++, and JavaScript
+- `src/enforcer.dl`, `src/application.dl`
+  - Execute ordered live mutations, manage temporary clones, format C++ sources, and publish scanner changes
+- `src/repository_checks.dl`, `src/reporting.dl`
+  - Handle repository-level policies, issue lifecycle, and human-readable reports
 
 ### Package Rules
 
-- Language-specific logic lives under `languages/`
-- GitHub and git logic is not duplicated across modules; `github.py` owns both local and remote operations
+- Protocol behavior is shared across language backends; only backend commands and initialization options vary
+- GitHub and git logic is not duplicated across modules; `src/github.dl` owns both local and remote operations
 - The CLI module does not contain GitHub logic, file traversal logic, or language-specific rewrite logic
 
 ## Execution Model
@@ -142,14 +120,14 @@ If the conventions schema does not define a category, the scanner must skip that
 ### C++
 
 - Scan only when C++ source files are present
-- Prefer `clang-tidy` with `readability-identifier-naming` for naming enforcement
+- Use clangd symbol and workspace edits for naming enforcement
 - Use temporary configuration files generated by the scanner if needed
 - Use `clang-format` after renames across the full repository set of supported files
 
 ### JavaScript
 
 - Scan only when JavaScript source files are present
-- Prefer AST-aware codemod tooling for renames
+- Use TypeScript language-server symbol and workspace edits for renames
 - Do not rely on raw text replacement for identifier updates
 
 ## Temporary Configuration Policy
@@ -317,10 +295,10 @@ The final report must reflect the repository's final state after all attempted f
 
 ## Implementation Direction
 
-The preferred implementation approach is:
+The implementation approach is:
 
-- Python orchestrator for workflow, ordering, GitHub integration, reporting, and temporary workspace management
-- External ecosystem tools for language-specific identifier rewrites where those tools are safer than custom code
+- DynLex orchestration for workflow, ordering, GitHub integration, reporting, caching, and temporary workspace management
+- LSP backends for language-specific identifier and reference rewrites
 - Incremental, live-tree mutation instead of batch fix planning
 
 This keeps the system consistent with the current repository while making the scanner capable of handling real code naming updates across multiple languages.

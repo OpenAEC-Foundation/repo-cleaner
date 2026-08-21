@@ -1,0 +1,36 @@
+import support.dl
+import ../src/reporting.dl
+
+set phases to an empty list of string
+append the string form of "directories" to phases
+append the string form of "files" to phases
+
+set languages to an empty list of string
+append the string form of "javascript" to languages
+
+set fixes to an empty list of string
+append the string form of "src/BadName.js -> src/bad_name.js" to fixes
+
+set remaining to an empty list of string
+append the string form of "src/huge_file.js exceeds 1000 lines" to remaining
+
+set failures to an empty list of string
+
+set report to a convention report for "demo" with phases phases, languages languages, fixes fixes, remaining violations remaining, failures failures, and pull request state "open"
+set body to the pull request body for report
+
+expect truth (body contains "# Convention fixes for `demo`")
+expect truth (body contains "## Phases run")
+expect truth (body contains "- directories")
+expect truth (body contains "## Languages detected")
+expect truth (body contains "- javascript")
+expect truth (body contains "## Applied fixes")
+expect truth (body contains "BadName.js -> src/bad_name.js")
+expect truth (body contains "## Remaining violations")
+expect truth (body contains "huge_file.js exceeds 1000 lines")
+expect truth (body contains "## Backend failures")
+expect truth (body contains "- None")
+expect truth (body contains "Scanner pull request: open")
+
+free convention report report
+print "reporting: passed" as a line

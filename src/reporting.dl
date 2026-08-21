@@ -1,0 +1,66 @@
+import lib/text.dl
+
+class:
+    patterns:
+        [a|the|] convention report
+    members:
+        repository name as string
+        phases as a pointer to list
+        languages as a pointer to list
+        fixes as a pointer to list
+        remaining violations as a pointer to list
+        failures as a pointer to list
+        pull request state as string
+
+function a convention report for {string:repository_name} with phases {a pointer to list:phases}, languages {a pointer to list:languages}, fixes {a pointer to list:fixes}, remaining violations {a pointer to list:remaining}, failures {a pointer to list:failures}, and pull request state {string:pull_request_state}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            a convention report,
+            repository_name,
+            phases,
+            languages,
+            fixes,
+            remaining,
+            failures,
+            pull_request_state
+        )
+        allocate one slot of value and set allocated_report to it
+        return allocated_report
+
+local function append report section {string:title} from {a pointer to list:items} to {a pointer to list:lines}:
+    execute:
+        append title to lines
+        if the length of items = 0:
+            append the string form of "- None" to lines
+        else:
+            set position to 0
+            loop while position < the length of items:
+                append (the string form of "- ") + the item at position in items to lines
+                set position to position + 1
+        append the string form of "" to lines
+
+function [the|] pull request body for {a pointer to convention report:report}:
+    execute:
+        set lines to an empty list of string
+        append (the string form of "# Convention fixes for `") + report's repository name + the string form of "`" to lines
+        append the string form of "" to lines
+        append report section "## Phases run" from report's phases to lines
+        append report section "## Languages detected" from report's languages to lines
+        append report section "## Applied fixes" from report's fixes to lines
+        append report section "## Remaining violations" from report's remaining violations to lines
+        append report section "## Backend failures" from report's failures to lines
+        append (the string form of "Scanner pull request: ") + report's pull request state to lines
+        set rendered_report to lines joined with "\n"
+        free lines
+        return rendered_report
+
+function free convention report {a pointer to convention report:report}:
+    execute:
+        free report's phases
+        free report's languages
+        free report's fixes
+        free report's remaining violations
+        free report's failures
+        @intrinsic("destroy at", report)
+        @intrinsic("call", "libc", "free", nothing, report)

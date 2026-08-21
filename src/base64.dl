@@ -1,0 +1,144 @@
+class:
+    patterns:
+        [a|the|] base64 decoding result
+    members:
+        succeeded as boolean
+        value as string
+        error message as string
+
+local function the base64 alphabet:
+    replacement:
+        the string form of "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+function the base64 encoding of {string:source}:
+    execute:
+        set encoded_length to ((the length of source + 2) / 3) * 4
+        set encoded to a new string buffer containing encoded_length bytes
+        set alphabet to the base64 alphabet
+        set source_position to 0
+        set encoded_position to 0
+        loop while source_position < the length of source:
+            set remaining to the length of source - source_position
+            set first to (the character at source_position in source as a 32 bit integer) bitwise and 255
+            set second to 0
+            set third to 0
+            if remaining > 1:
+                set second to (the character at source_position + 1 in source as a 32 bit integer) bitwise and 255
+            if remaining > 2:
+                set third to (the character at source_position + 2 in source as a 32 bit integer) bitwise and 255
+            set packed to (first shifted left by 16) bitwise or (second shifted left by 8)
+            set packed to packed bitwise or third
+            store the character at ((packed shifted right by 18) bitwise and 63) in alphabet into the data of encoded at encoded_position
+            store the character at ((packed shifted right by 12) bitwise and 63) in alphabet into the data of encoded at encoded_position + 1
+            if remaining > 1:
+                store the character at ((packed shifted right by 6) bitwise and 63) in alphabet into the data of encoded at encoded_position + 2
+            else:
+                store 61 as a byte into the data of encoded at encoded_position + 2
+            if remaining > 2:
+                store the character at (packed bitwise and 63) in alphabet into the data of encoded at encoded_position + 3
+            else:
+                store 61 as a byte into the data of encoded at encoded_position + 3
+            set source_position to source_position + 3
+            set encoded_position to encoded_position + 4
+        return encoded
+
+local function a failed base64 decoding reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a base64 decoding result,
+            false,
+            the string form of "",
+            message
+        )
+
+local function whitespace {integer:value} is ignored in base64:
+    execute:
+        if value = 32:
+            return true
+        if value = 9:
+            return true
+        if value = 10:
+            return true
+        return value = 13
+
+local function the base64 value of {integer:character}:
+    execute:
+        if character = 61:
+            return -2
+        set alphabet to the base64 alphabet
+        set position to 0
+        loop while position < the length of alphabet:
+            if the character at position in alphabet as a 32 bit integer = character:
+                return position
+            set position to position + 1
+        return -1
+
+function decode the base64 text {string:source}:
+    execute:
+        set compact_length to 0
+        set position to 0
+        loop while position < the length of source:
+            set character to (the character at position in source as a 32 bit integer) bitwise and 255
+            if the inverse of (whitespace character is ignored in base64):
+                if the base64 value of character = -1:
+                    return a failed base64 decoding reporting the string form of "Base64 text contains an invalid character"
+                set compact_length to compact_length + 1
+            set position to position + 1
+        if the remainder of compact_length divided by 4 != 0:
+            return a failed base64 decoding reporting the string form of "Base64 text has an invalid length"
+
+        set compact to a new string buffer containing compact_length bytes
+        set compact_position to 0
+        set position to 0
+        loop while position < the length of source:
+            set character to (the character at position in source as a 32 bit integer) bitwise and 255
+            if the inverse of (whitespace character is ignored in base64):
+                store character as a byte into the data of compact at compact_position
+                set compact_position to compact_position + 1
+            set position to position + 1
+
+        set decoded to a new string buffer containing ((compact_length / 4) * 3) bytes
+        set decoded_position to 0
+        set position to 0
+        loop while position < compact_length:
+            set first to the base64 value of ((the character at position in compact as a 32 bit integer) bitwise and 255)
+            set second to the base64 value of ((the character at position + 1 in compact as a 32 bit integer) bitwise and 255)
+            set third to the base64 value of ((the character at position + 2 in compact as a 32 bit integer) bitwise and 255)
+            set fourth to the base64 value of ((the character at position + 3 in compact as a 32 bit integer) bitwise and 255)
+            set last_group to position + 4 = compact_length
+            if first < 0 or second < 0:
+                return a failed base64 decoding reporting the string form of "Base64 text has invalid padding"
+            if third = -2:
+                set invalid_padding to fourth != -2
+                set invalid_padding to invalid_padding or the inverse of last_group
+                set invalid_padding to invalid_padding or (second bitwise and 15) != 0
+                if invalid_padding:
+                    return a failed base64 decoding reporting the string form of "Base64 text has invalid padding"
+                store ((first shifted left by 2) bitwise or (second shifted right by 4)) as a byte into the data of decoded at decoded_position
+                set decoded_position to decoded_position + 1
+            else if fourth = -2:
+                set invalid_padding to third < 0
+                set invalid_padding to invalid_padding or the inverse of last_group
+                set invalid_padding to invalid_padding or (third bitwise and 3) != 0
+                if invalid_padding:
+                    return a failed base64 decoding reporting the string form of "Base64 text has invalid padding"
+                store ((first shifted left by 2) bitwise or (second shifted right by 4)) as a byte into the data of decoded at decoded_position
+                store (((second bitwise and 15) shifted left by 4) bitwise or (third shifted right by 2)) as a byte into the data of decoded at decoded_position + 1
+                set decoded_position to decoded_position + 2
+            else:
+                if third < 0 or fourth < 0:
+                    return a failed base64 decoding reporting the string form of "Base64 text has invalid padding"
+                store ((first shifted left by 2) bitwise or (second shifted right by 4)) as a byte into the data of decoded at decoded_position
+                store (((second bitwise and 15) shifted left by 4) bitwise or (third shifted right by 2)) as a byte into the data of decoded at decoded_position + 1
+                store (((third bitwise and 3) shifted left by 6) bitwise or fourth) as a byte into the data of decoded at decoded_position + 2
+                set decoded_position to decoded_position + 3
+            set position to position + 4
+        set value to the substring of decoded from 0 spanning decoded_position bytes
+        return @intrinsic(
+            "construct",
+            a base64 decoding result,
+            true,
+            value,
+            the string form of ""
+        )

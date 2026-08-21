@@ -1,0 +1,29 @@
+import support.dl
+import ../src/commands.dl
+
+set arguments to an empty list of string
+append the string form of "--version" to arguments
+
+set completed to run tool "git" with arguments
+expect truth (completed's succeeded)
+expect truth (completed's standard output contains "git version")
+expect completed's exit code as an integer to equal 0
+free arguments
+
+set missing_arguments to an empty list of string
+set missing to run tool "repo-cleaner-tool-that-does-not-exist" with missing_arguments
+expect falsehood (missing's succeeded)
+expect truth (the length of missing's error message > 0)
+free missing_arguments
+
+set rejected_arguments to an empty list of string
+append the string form of "rev-parse" to rejected_arguments
+append the string form of "--verify" to rejected_arguments
+append the string form of "reference-that-does-not-exist" to rejected_arguments
+set rejected to run tool "git" with rejected_arguments
+expect falsehood rejected's succeeded
+expect truth (rejected's launched)
+expect truth (rejected's exit code as an integer != 0)
+free rejected_arguments
+
+print "commands: passed" as a line

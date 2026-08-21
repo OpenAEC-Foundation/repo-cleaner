@@ -1,0 +1,377 @@
+import language_server.dl
+
+local class:
+    patterns:
+        [the|] path rename documents
+    members:
+        succeeded as boolean
+        URIs as a pointer to list
+        error message as string
+
+class:
+    patterns:
+        [a|the|] path rename preparation
+    members:
+        succeeded as boolean
+        edit as a pointer to a parsed workspace edit
+        error message as string
+
+local function an allocated failed path rename preparation reporting {string:message}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            a path rename preparation,
+            false,
+            0 as a pointer to a parsed workspace edit,
+            message
+        )
+        allocate one slot of value and set allocated_preparation to it
+        return allocated_preparation
+
+local function an allocated successful path rename preparation containing {a pointer to a parsed workspace edit:edit}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            a path rename preparation,
+            true,
+            edit,
+            the string form of ""
+        )
+        allocate one slot of value and set allocated_preparation to it
+        return allocated_preparation
+
+function free path rename preparation {a pointer to path rename preparation:preparation}:
+    execute:
+        free preparation's edit
+        @intrinsic("destroy at", preparation)
+        @intrinsic("call", "libc", "free", nothing, preparation)
+
+function free path rename preparations {a pointer to list:preparations}:
+    execute:
+        set position to 0
+        loop while position < the length of preparations:
+            set preparation to @intrinsic("cast", the item at position in preparations, a pointer to path rename preparation)
+            free path rename preparation preparation
+            set position to position + 1
+        free preparations
+
+local function a failed path rename changed {boolean:changed} reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a language operation result,
+            false,
+            changed,
+            the string form of "",
+            message
+        )
+
+local function a successful path operation changed {boolean:changed} described by {string:description}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a language operation result,
+            true,
+            changed,
+            description,
+            the string form of ""
+        )
+
+local function {a pointer to an LSP client:client} supports path rename preparation:
+    execute:
+        set capabilities to client's capabilities
+        if capabilities lacks JSON member named "workspace":
+            return false
+        set workspace to the JSON member named "workspace" in capabilities
+        if workspace is not a JSON object or workspace lacks JSON member named "fileOperations":
+            return false
+        set operations to the JSON member named "fileOperations" in workspace
+        if operations is not a JSON object:
+            return false
+        return operations has JSON member named "willRename"
+
+local function {a pointer to an LSP client:client} accepts path rename notifications:
+    execute:
+        set capabilities to client's capabilities
+        if capabilities lacks JSON member named "workspace":
+            return false
+        set workspace to the JSON member named "workspace" in capabilities
+        if workspace is not a JSON object or workspace lacks JSON member named "fileOperations":
+            return false
+        set operations to the JSON member named "fileOperations" in workspace
+        if operations is not a JSON object:
+            return false
+        return operations has JSON member named "didRename"
+
+function {a pointer to language session:session} supports path rename preparation:
+    execute:
+        return session's backend's uses path rename preparation and session's client supports path rename preparation
+
+function {a pointer to language session:session} accepts path rename notifications:
+    replacement:
+        session's client accepts path rename notifications
+
+local function close path rename documents {a pointer to list:uris} using {a pointer to an LSP client:client}:
+    execute:
+        set succeeded to true
+        set error to the string form of ""
+        set position to 0
+        loop while position < the length of uris:
+            set uri to the item at position in uris
+            set closed to the result of closing LSP document uri uri using client
+            if closed failed and succeeded:
+                set succeeded to false
+                set error to closed's error message
+            set position to position + 1
+        return @intrinsic(
+            "construct",
+            a language operation result,
+            succeeded,
+            false,
+            the string form of "",
+            error
+        )
+
+local function open path rename documents through {a pointer to language session:session}:
+    execute:
+        set uris to an empty list of string
+        set backend to session's backend
+        set client to session's client
+        if the inverse of backend's loads documents for path renames:
+            return @intrinsic(
+                "construct",
+                the path rename documents,
+                true,
+                uris,
+                the string form of ""
+            )
+
+        set scanned to scan repository tree at session's root
+        if the inverse of scanned's succeeded:
+            return @intrinsic(
+                "construct",
+                the path rename documents,
+                false,
+                uris,
+                scanned's error message
+            )
+        set entries to scanned's tree's entries
+        set position to 0
+        set succeeded to true
+        set error to the string form of ""
+        loop while succeeded and position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if the inverse of entry's directory and entry's language = backend's language:
+                read the file at entry's absolute path and set read_result to it
+                if read_result failed:
+                    set succeeded to false
+                    set error to read_result's error message
+                else:
+                    set uri_result to the file URI for entry's absolute path interpreted as a native path
+                    if uri_result failed or uri_result is unsupported:
+                        set succeeded to false
+                        set error to uri_result's error message
+                    else:
+                        set opened to the result of opening LSP document uri_result's value written in backend's language with read_result's contents as its text using client
+                        if opened failed:
+                            set succeeded to false
+                            set error to opened's error message
+                        else:
+                            append uri_result's value to uris
+            set position to position + 1
+        free repository tree result scanned
+        if the inverse of succeeded:
+            set closed to close path rename documents uris using client
+            if the inverse of closed's succeeded:
+                set error to error + the string form of "; closing path-rename documents failed: "
+                set error to error + closed's error message
+        return @intrinsic(
+            "construct",
+            the path rename documents,
+            succeeded,
+            uris,
+            error
+        )
+
+local function LSP file rename parameters from {string:source_uri} to {string:target_uri}:
+    execute:
+        set operation to a new JSON-RPC object
+        add JSON-RPC member "oldUri" containing a new JSON-RPC text for source_uri to operation
+        add JSON-RPC member "newUri" containing a new JSON-RPC text for target_uri to operation
+        set files to a new JSON-RPC array
+        add operation to the JSON array files
+        set payload to a new JSON-RPC object
+        add JSON-RPC member "files" containing files to payload
+        return payload
+
+function prepare references for path rename {rename candidate:candidate} through {a pointer to language session:session}:
+    execute:
+        if the inverse of candidate's found:
+            @intrinsic("call", "libc", "abort", nothing)
+        set client to session's client
+        if the inverse of (client supports path rename preparation):
+            return an allocated failed path rename preparation reporting the string form of "Language server does not support path renames"
+        set documents to open path rename documents through session
+        if the inverse of documents's succeeded:
+            set message to documents's error message
+            free documents's URIs
+            return an allocated failed path rename preparation reporting message
+
+        set source_uri to the file URI for candidate's source path interpreted as a native path
+        if source_uri failed or source_uri is unsupported:
+            set message to source_uri's error message
+            set closed to close path rename documents documents's URIs using client
+            free documents's URIs
+            if the inverse of closed's succeeded:
+                set message to message + the string form of "; closing path-rename documents failed: "
+                set message to message + closed's error message
+            return an allocated failed path rename preparation reporting message
+        set target_uri to the file URI for candidate's target path interpreted as a native path
+        if target_uri failed or target_uri is unsupported:
+            set message to target_uri's error message
+            set closed to close path rename documents documents's URIs using client
+            free documents's URIs
+            if the inverse of closed's succeeded:
+                set message to message + the string form of "; closing path-rename documents failed: "
+                set message to message + closed's error message
+            return an allocated failed path rename preparation reporting message
+
+        set parameters to LSP file rename parameters from source_uri's value to target_uri's value
+        set sent to the result of sending an LSP request "workspace/willRenameFiles" with parameters using client
+        if sent failed:
+            set message to sent's error message
+            free parameters
+            set closed to close path rename documents documents's URIs using client
+            free documents's URIs
+            if the inverse of closed's succeeded:
+                set message to message + the string form of "; closing path-rename documents failed: "
+                set message to message + closed's error message
+            return an allocated failed path rename preparation reporting message
+        set response to receive reply to sent from client
+        if response failed:
+            set message to error reported by response
+            free response
+            free parameters
+            set closed to close path rename documents documents's URIs using client
+            free documents's URIs
+            if the inverse of closed's succeeded:
+                set message to message + the string form of "; closing path-rename documents failed: "
+                set message to message + closed's error message
+            return an allocated failed path rename preparation reporting message
+
+        set closed to close path rename documents documents's URIs using client
+        free documents's URIs
+        if the inverse of closed's succeeded:
+            set message to closed's error message
+            free response
+            free parameters
+            return an allocated failed path rename preparation reporting message
+
+        set edit to a new parsed workspace edit using document changes true
+        if response's result is not JSON null and workspace edit response's result has operations:
+            set edit_text to the compact JSON form of response's result
+            set parsing to the result of parsing edit_text as a workspace edit
+            if parsing failed:
+                set message to parsing's failure reason
+                free edit
+                free parsing
+                free response
+                free parameters
+                return an allocated failed path rename preparation reporting message
+            free edit
+            set edit to parsing's edit
+            set parsing's edit to 0 as a pointer to a parsed workspace edit
+            free parsing
+            set changes to edit's changes
+            set position to 0
+            loop while position < the length of changes:
+                set change to the workspace change at index position in changes
+                if change's kind != the workspace text change kind:
+                    set message to the string form of "Language server proposed a filesystem operation while preparing a path rename"
+                    free edit
+                    free response
+                    free parameters
+                    return an allocated failed path rename preparation reporting message
+                set position to position + 1
+        free response
+        free parameters
+        return an allocated successful path rename preparation containing edit
+
+function apply path rename edits from {a pointer to list:preparations} rooted at {string:root}:
+    execute:
+        set combined to a new parsed workspace edit using document changes true
+        set preparation_position to 0
+        loop while preparation_position < the length of preparations:
+            set preparation to @intrinsic("cast", the item at preparation_position in preparations, a pointer to path rename preparation)
+            if the inverse of preparation's succeeded:
+                free combined
+                return a failed path rename changed false reporting preparation's error message
+            set source_annotations to preparation's edit's annotations
+            set annotation_position to 0
+            loop while annotation_position < the length of source_annotations:
+                set source_annotation to the workspace change annotation at index annotation_position in source_annotations
+                set earlier_position to 0
+                loop while earlier_position < annotation_position:
+                    set earlier_annotation to the workspace change annotation at index earlier_position in source_annotations
+                    if earlier_annotation's identifier = source_annotation's identifier:
+                        free combined
+                        return a failed path rename changed false reporting (the string form of "Language server returned the same workspace annotation identifier more than once: ") + source_annotation's identifier
+                    set earlier_position to earlier_position + 1
+                set combined_annotations to combined's annotations
+                set combined_position to 0
+                loop while combined_position < the length of combined_annotations:
+                    set combined_annotation to the workspace change annotation at index combined_position in combined_annotations
+                    if combined_annotation's identifier = source_annotation's identifier:
+                        free combined
+                        return a failed path rename changed false reporting (the string form of "Language servers returned the same workspace annotation identifier: ") + source_annotation's identifier
+                    set combined_position to combined_position + 1
+                set annotation_position to annotation_position + 1
+
+            set annotation_position to 0
+            loop while annotation_position < the length of source_annotations:
+                append (the workspace change annotation at index annotation_position in source_annotations) to workspace annotations combined's annotations
+                set annotation_position to annotation_position + 1
+            set the length of source_annotations to 0
+
+            set source_changes to preparation's edit's changes
+            set change_position to 0
+            loop while change_position < the length of source_changes:
+                append (the workspace change at index change_position in source_changes) to workspace changes combined's changes
+                set change_position to change_position + 1
+            set the length of source_changes to 0
+            set preparation_position to preparation_position + 1
+
+        set changed to the length of combined's changes > 0
+        if the inverse of changed:
+            free combined
+            return a successful path operation changed false described by the string form of ""
+        set context_result to the result of creating a workspace edit context rooted at root
+        if context_result failed:
+            set message to context_result's failure reason
+            free combined
+            return a failed path rename changed false reporting message
+        set context to context_result's context
+        set applied to the result of applying parsed workspace edit combined using context
+        free context
+        free combined
+        if applied was not applied:
+            return a failed path rename changed applied's possible application reporting applied's failure reason
+        return a successful path operation changed true described by the string form of ""
+
+function announce path rename {rename candidate:candidate} through {a pointer to language session:session}:
+    execute:
+        if the inverse of (session accepts path rename notifications):
+            @intrinsic("call", "libc", "abort", nothing)
+        set client to session's client
+        set source_uri to the file URI for candidate's source path interpreted as a native path
+        if source_uri failed or source_uri is unsupported:
+            return a failed path rename changed false reporting source_uri's error message
+        set target_uri to the file URI for candidate's target path interpreted as a native path
+        if target_uri failed or target_uri is unsupported:
+            return a failed path rename changed false reporting target_uri's error message
+        set parameters to LSP file rename parameters from source_uri's value to target_uri's value
+        set notified to the result of sending an LSP notification "workspace/didRenameFiles" with parameters using client
+        free parameters
+        if notified failed:
+            return a failed path rename changed false reporting notified's error message
+        return a successful path operation changed false described by the string form of ""

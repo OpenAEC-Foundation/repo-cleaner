@@ -1,0 +1,55 @@
+import support.dl
+import ../src/manager.dl
+import ../src/scanner.dl
+import lib/filesystem.dl
+
+local function make executable {string:path}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "+x" to arguments
+        append path to arguments
+        set completed to run tool "chmod" with arguments
+        free arguments
+        expect truth (completed's succeeded)
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+set fake_gh to repository path from root and "gh"
+set script to "#!/usr/bin/env python3\nimport base64,json,os,sys\na=sys.argv[1:];marker=__file__+'.issue'\nif a[:2]==['repo','view']:\n print(json.dumps({'name':'BadName','defaultBranchRef':{'name':'main'}}));sys.exit(0)\nif a[:2]==['issue','list']:\n q=a[a.index('--search')+1];title=q.split('\"')[1]\n if os.path.exists(marker): print(json.dumps([{'number':3,'title':title,'state':'OPEN','isPinned':True}]))\n else: print('[]')\n sys.exit(0)\nif a[:2]==['issue','create']: open(marker,'w').close();print('https://example.test/issues/3');sys.exit(0)\nif a[:2] in (['issue','edit'],['issue','pin'],['issue','unpin'],['issue','close']): sys.exit(0)\nif a and a[0]=='api' and 'contents/README.md' in a[1]:\n print('gh: Not Found (HTTP 404)',file=sys.stderr);sys.exit(1)\nif a and a[0]=='api' and 'contents/LICENSE.md' in a[1]:\n print(json.dumps({'content':base64.b64encode(b'old').decode(),'sha':'sha'}));sys.exit(0)\nprint('unexpected: '+repr(a),file=sys.stderr);sys.exit(2)\n"
+write script to the file at fake_gh
+expect truth it succeeded
+make executable fake_gh
+set tools to github tools using fake_gh and "git"
+
+set arguments to an empty list of string
+append the string form of "--repo-naming" to arguments
+append the string form of "--licenses" to arguments
+append the string form of "--readme" to arguments
+append the string form of "--single-repo" to arguments
+append the string form of "BadName" to arguments
+append the string form of "--org" to arguments
+append the string form of "Example" to arguments
+set command_line to understand command line arguments
+expect truth (command_line's succeeded)
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n"
+expect truth (loaded's succeeded)
+set backends to the default language backends
+set managed to manage repositories requested by command_line's options using tools, loaded's conventions, backends, and license "standard"
+expect truth (managed's succeeded)
+expect truth (managed's violations)
+expect falsehood (managed's changed)
+expect the length of managed's errors to equal 0
+expect the length of managed's summaries to equal 3
+
+free repository management result managed
+free language backends backends
+free conventions result loaded
+free command line result command_line
+free github tools tools
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "manager: passed" as a line

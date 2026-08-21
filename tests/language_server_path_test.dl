@@ -1,0 +1,110 @@
+import support.dl
+import ../src/language_server_paths.dl
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+
+set source_path to repository path from root and "BadName.js"
+set target_path to repository path from root and "bad_name.js"
+write the string form of "export const value = 1;\n" to the file at source_path
+expect truth (it succeeded)
+
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();caps=init['params']['capabilities']['workspace'];assert caps['workspaceEdit']['documentChanges'] is True;assert caps['fileOperations']=={'willRename':True,'didRename':True};send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';request=read();assert request['method']=='workspace/willRenameFiles';change=request['params']['files'][0];assert change['oldUri'].endswith('/BadName.js') and change['newUri'].endswith('/bad_name.js');send({'jsonrpc':'2.0','id':request['id'],'result':None});notification=read();assert notification['method']=='workspace/didRenameFiles';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set backend_arguments to an empty list of string
+append the string form of "-u" to backend_arguments
+append the string form of "-c" to backend_arguments
+append script to backend_arguments
+set backend to a language backend named "javascript" using "python3" with backend_arguments
+
+set begun to begin language session using backend in root
+expect truth begun's succeeded
+set session to begun's session
+expect truth (session supports path rename preparation)
+expect truth (session accepts path rename notifications)
+set candidate to @intrinsic(
+    "construct",
+    a rename candidate,
+    true,
+    source_path,
+    target_path,
+    the string form of "BadName.js",
+    the string form of "bad_name.js",
+    the string form of "javascript"
+)
+set preparations to an empty list of a pointer to path rename preparation
+set prepared to prepare references for path rename candidate through session
+append prepared to preparations
+expect truth prepared's succeeded
+set applied to apply path rename edits from preparations rooted at root
+free path rename preparations preparations
+expect truth applied's succeeded
+rename the filesystem entry at source_path to target_path
+expect truth it succeeded
+set announced to announce path rename candidate through session
+expect truth announced's succeeded
+set finished to finish language session session
+expect truth finished's succeeded
+
+set source_entry to the file system entry at source_path
+expect truth (source_entry was absent)
+set target_entry to the file system entry at target_path
+expect truth (target_entry is a regular file)
+
+free language backend backend
+remove the filesystem tree at root
+expect truth (it succeeded)
+
+create a temporary directory
+set unsupported_temporary to it
+expect truth unsupported_temporary succeeded
+set unsupported_root to unsupported_temporary's directory path
+set unsupported_source to repository path from unsupported_root and "BadName.js"
+set unsupported_target to repository path from unsupported_root and "bad_name.js"
+write the string form of "export const value = 1;\n" to the file at unsupported_source
+expect truth it succeeded
+set unsupported_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{}}}}}});assert read()['method']=='initialized';message=read();\nif message['method']=='workspace/willRenameFiles': send({'jsonrpc':'2.0','id':message['id'],'result':None});message=read()\nassert message['method']=='shutdown';send({'jsonrpc':'2.0','id':message['id'],'result':None});assert read()['method']=='exit'"
+set unsupported_arguments to an empty list of string
+append the string form of "-u" to unsupported_arguments
+append the string form of "-c" to unsupported_arguments
+append unsupported_script to unsupported_arguments
+set unsupported_backend to a language backend named "javascript" using "python3" with unsupported_arguments
+set unsupported_begun to begin language session using unsupported_backend in unsupported_root
+expect truth unsupported_begun's succeeded
+expect truth (unsupported_begun's session supports path rename preparation)
+expect falsehood (unsupported_begun's session accepts path rename notifications)
+set unsupported_candidate to @intrinsic(
+    "construct",
+    a rename candidate,
+    true,
+    unsupported_source,
+    unsupported_target,
+    the string form of "BadName.js",
+    the string form of "bad_name.js",
+    the string form of "javascript"
+)
+set unsupported_preparations to an empty list of a pointer to path rename preparation
+set unsupported_prepared to prepare references for path rename unsupported_candidate through unsupported_begun's session
+append unsupported_prepared to unsupported_preparations
+expect truth unsupported_prepared's succeeded
+set unsupported_applied to apply path rename edits from unsupported_preparations rooted at unsupported_root
+free path rename preparations unsupported_preparations
+expect truth unsupported_applied's succeeded
+rename the filesystem entry at unsupported_source to unsupported_target
+expect truth it succeeded
+set unsupported_finished to finish language session unsupported_begun's session
+expect truth unsupported_finished's succeeded
+set restarted to begin language session using unsupported_backend in unsupported_root
+expect truth restarted's succeeded
+set restarted_finished to finish language session restarted's session
+expect truth restarted_finished's succeeded
+set unsupported_source_entry to the file system entry at unsupported_source
+expect truth unsupported_source_entry was absent
+set unsupported_target_entry to the file system entry at unsupported_target
+expect truth unsupported_target_entry is a regular file
+free language backend unsupported_backend
+remove the filesystem tree at unsupported_root
+expect truth it succeeded
+
+print "language server path: passed" as a line

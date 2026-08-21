@@ -4,42 +4,159 @@ on:
   workflow_call:
     inputs:
       repo_name:
-        description: 'Repository name to check'
+        description: Repository name to check
         required: true
         type: string
       org:
-        description: 'Organization name'
+        description: GitHub organization
         required: false
         type: string
-        default: 'OpenAEC-Foundation'
+        default: OpenAEC-Foundation
+      repo_cleaner_ref:
+        description: repo-cleaner revision to execute
+        required: false
+        type: string
+        default: master
+      dynlex_ref:
+        description: DynLex revision with stable structural variable-flow inference
+        required: false
+        type: string
+        default: explicit-pattern-literals
+      llvm_project_ref:
+        description: LLVM revision with transactional clangd file and directory renames
+        required: false
+        type: string
+        default: clangd-file-rename-core
     secrets:
       gh_token:
-        description: 'GitHub token for gh CLI'
+        description: Token with contents, issues, and pull-request access
         required: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.gh_token }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
       - name: Checkout repo-cleaner
         uses: actions/checkout@v4
         with:
           repository: OpenAEC-Foundation/repo-cleaner
+          ref: ${{ inputs.repo_cleaner_ref }}
           path: repo-cleaner
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Checkout DynLex
+        uses: actions/checkout@v4
         with:
-          python-version: '3.11'
+          repository: OpenAEC-Foundation/dynlex
+          ref: ${{ inputs.dynlex_ref }}
+          submodules: true
+          path: dynlex
 
-      - name: Install dependencies
+      - name: Checkout LLVM
+        uses: actions/checkout@v4
+        with:
+          repository: OpenAEC-Foundation/llvm-project
+          ref: ${{ inputs.llvm_project_ref }}
+          path: llvm-project
+          filter: blob:none
+
+      - name: Restore DynLex toolchain
+        uses: actions/cache@v4
+        with:
+          path: dynlex/.cache/llvm-toolchain
+          key: dynlex-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dynlex/metadata/LLVM_TOOLCHAIN', 'dynlex/scripts/llvm_toolchain.sh') }}
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: repo-cleaner-ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.dynlex_ref }}-${{ inputs.llvm_project_ref }}
+          restore-keys: |
+            repo-cleaner-ccache-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install DynLex dependencies
+        working-directory: dynlex
+        run: ./scripts/install.sh
+
+      - name: Build DynLex
+        working-directory: dynlex
+        run: ./scripts/build.sh --release
+
+      - name: Build path-rename clangd
         run: |
-          pip install pyyaml
+          set -euo pipefail
+          command -v ccache
+          command -v clang
+          command -v clang++
+          command -v cmake
+          command -v ninja
+          cmake -S llvm-project/llvm -B llvm-project/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DLLVM_ENABLE_PROJECTS=clang \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DLLVM_TARGETS_TO_BUILD=Native
+          cmake --build llvm-project/build --target clangd clang-format --parallel 2
+          echo "$GITHUB_WORKSPACE/llvm-project/build/bin" >> "$GITHUB_PATH"
 
-      - name: Check repository conventions
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install language servers
+        run: |
+          set -euo pipefail
+          npm install --global typescript-language-server@5.3.0 typescript@6.0.3
+          mkdir -p "$HOME/.local/bin"
+          curl --fail --location --silent --show-error \
+            --output "$HOME/.local/bin/phpactor" \
+            https://github.com/phpactor/phpactor/releases/download/2026.07.22.0/phpactor.phar
+          echo "8c0155380b9d7559a12f35ddf8d09c1dc23e72f1797498038251fc35ad15574d  $HOME/.local/bin/phpactor" \
+            | sha256sum --check --strict
+          chmod +x "$HOME/.local/bin/phpactor"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          command -v typescript-language-server
+          command -v tsserver
+          "$HOME/.local/bin/phpactor" --version
+
+      - name: Verify selected native tools
+        run: |
+          set -euo pipefail
+          test "$(command -v clangd)" = "$GITHUB_WORKSPACE/llvm-project/build/bin/clangd"
+          test "$(command -v clang-format)" = "$GITHUB_WORKSPACE/llvm-project/build/bin/clang-format"
+          clangd --version
+          clang-format --version
+
+      - name: Build repo-cleaner
         working-directory: repo-cleaner
         env:
-          GH_TOKEN: ${{ secrets.gh_token }}
+          DYNLEX: ${{ github.workspace }}/dynlex/build/dynlex
+        run: ./scripts/build.sh
+
+      - name: Test repo-cleaner
+        working-directory: repo-cleaner
+        env:
+          DYNLEX: ${{ github.workspace }}/dynlex/build/dynlex
+        run: ./scripts/test.sh
+
+      - name: Check and fix repository conventions
+        working-directory: repo-cleaner
         run: |
-          python3 repo_conventions_enforcer.py --repo-naming --single-repo "${{ inputs.repo_name }}" --org "${{ inputs.org }}"
+          ./build/repo-conventions-enforcer \
+            --repo-naming \
+            --fix-code-conventions \
+            --readme \
+            --single-repo "${{ inputs.repo_name }}" \
+            --org "${{ inputs.org }}"

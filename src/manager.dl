@@ -1,0 +1,170 @@
+import application.dl
+import cli.dl
+import repository_checks.dl
+
+class:
+    patterns:
+        [a|the|] repository processing result
+    members:
+        succeeded as boolean
+        violations as boolean
+        changed as boolean
+        summaries as a pointer to list
+        errors as a pointer to list
+
+class:
+    patterns:
+        [a|the|] repository management result
+    members:
+        succeeded as boolean
+        violations as boolean
+        changed as boolean
+        summaries as a pointer to list
+        errors as a pointer to list
+
+local function append {repository check result:checked} for {string:repository_name} to {a pointer to list:summaries} and {a pointer to list:errors}:
+    execute:
+        if the length of checked's description > 0:
+            append repository_name + the string form of ": " + checked's description to summaries
+        if the inverse of checked's succeeded:
+            append repository_name + the string form of ": " + checked's error message to errors
+
+local function an empty repository processing result:
+    execute:
+        set summaries to an empty list of string
+        set errors to an empty list of string
+        return @intrinsic(
+            "construct",
+            a repository processing result,
+            true,
+            false,
+            false,
+            summaries,
+            errors
+        )
+
+local function process {github repository:repository} in {string:organization} requested by {a pointer to command line options:options} using {a pointer to github tools:tools}, {a pointer to conventions:rules}, {a pointer to list:backends}, and license {string:standard_license}:
+    execute:
+        set result to an empty repository processing result
+        set current_name to repository's name
+        set current_address to organization + the string form of "/"
+        set current_address to current_address + current_name
+
+        set empty_issue to synchronize the empty repository issue in current_address empty repository's empty using tools
+        if the inverse of empty_issue's succeeded:
+            set result's succeeded to false
+            append current_name + the string form of ": " + empty_issue's error message to result's errors
+        if repository's empty:
+            set result's violations to true
+            append current_name + the string form of ": Repository is empty" to result's summaries
+
+        if options's check repository naming or options's fix repository naming:
+            set naming to enforce the repository naming convention for current_address named current_name using rules and tools, fixing options's fix repository naming
+            append naming for current_name to result's summaries and result's errors
+            set result's succeeded to result's succeeded and naming's succeeded
+            set result's violations to result's violations or naming's violation
+            set result's changed to result's changed or naming's changed
+            if naming's changed:
+                set current_name to naming's repository name
+                set current_address to organization + the string form of "/"
+                set current_address to current_address + current_name
+
+        if the inverse of repository's empty and options's check readme:
+            set readme to check the readme in current_address using tools
+            append readme for current_name to result's summaries and result's errors
+            set result's succeeded to result's succeeded and readme's succeeded
+            set result's violations to result's violations or readme's violation
+
+        set manages_license to options's check licenses or options's fix licenses
+        if the inverse of repository's empty and manages_license:
+            set license_check to enforce the standard license standard_license in current_address on repository's default branch using tools, fixing options's fix licenses
+            append license_check for current_name to result's summaries and result's errors
+            set result's succeeded to result's succeeded and license_check's succeeded
+            set result's violations to result's violations or license_check's violation
+            set result's changed to result's changed or license_check's changed
+
+        set manages_code to options's check code conventions or options's fix code conventions
+        if the inverse of repository's empty and manages_code:
+            set publish_fixes to options's fix code conventions
+            set enforcement to process code conventions in github repository current_address named current_name from repository's default branch using tools and rules with backends, publishing fixes publish_fixes
+            append the pull request body for enforcement's report to result's summaries
+            if the inverse of enforcement's succeeded:
+                set result's succeeded to false
+                append current_name + the string form of ": " + enforcement's error message to result's errors
+            set result's violations to result's violations or enforcement's violations
+            set result's changed to result's changed or enforcement's changed
+            free code convention repository result enforcement
+        return result
+
+local function merge {repository processing result:repository_result} into {a pointer to repository management result:management}:
+    execute:
+        set management's succeeded to management's succeeded and repository_result's succeeded
+        set management's violations to management's violations or repository_result's violations
+        set management's changed to management's changed or repository_result's changed
+        set position to 0
+        loop while position < the length of repository_result's summaries:
+            append the item at position in repository_result's summaries to management's summaries
+            set position to position + 1
+        set position to 0
+        loop while position < the length of repository_result's errors:
+            append the item at position in repository_result's errors to management's errors
+            set position to position + 1
+        free repository_result's summaries
+        free repository_result's errors
+
+local function an allocated repository management result:
+    execute:
+        set summaries to an empty list of string
+        set errors to an empty list of string
+        set value to @intrinsic(
+            "construct",
+            a repository management result,
+            true,
+            false,
+            false,
+            summaries,
+            errors
+        )
+        allocate one slot of value and set allocation to it
+        return allocation
+
+function manage repositories requested by {a pointer to command line options:options} using {a pointer to github tools:tools}, {a pointer to conventions:rules}, {a pointer to list:backends}, and license {string:standard_license}:
+    execute:
+        set management to an allocated repository management result
+        if the length of options's single repository > 0:
+            set address to options's organization + the string form of "/"
+            set address to address + options's single repository
+            set inspected to inspect repository address using tools
+            if the inverse of inspected's succeeded:
+                set management's succeeded to false
+                append inspected's error message to management's errors
+            else:
+                set repository_pointer to inspected's repository
+                set repository_value to the value at repository_pointer
+                set processed to process repository_value in options's organization requested by options using tools, rules, backends, and license standard_license
+                merge processed into management
+            free github repository result inspected
+            return management
+
+        set listed to list repositories in options's organization using tools
+        if the inverse of listed's succeeded:
+            set management's succeeded to false
+            append listed's error message to management's errors
+            free github repository list result listed
+            return management
+        set listed_repositories to listed's repositories
+        set position to 0
+        loop while position < the length of listed_repositories:
+            set repository to @intrinsic("cast", the item at position in listed_repositories, a github repository)
+            set processed to process repository in options's organization requested by options using tools, rules, backends, and license standard_license
+            merge processed into management
+            set position to position + 1
+        free github repository list result listed
+        return management
+
+function free repository management result {a pointer to repository management result:result}:
+    execute:
+        free result's summaries
+        free result's errors
+        @intrinsic("destroy at", result)
+        @intrinsic("call", "libc", "free", nothing, result)

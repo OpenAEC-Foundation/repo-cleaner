@@ -1,0 +1,71 @@
+import support.dl
+import ../src/scanner.dl
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+
+set nested to repository path from root and the string form of "BadDir/InnerDir"
+create a directory tree at nested
+expect truth (it succeeded)
+
+set javascript_path to repository path from nested and the string form of "BadFile.js"
+write the string form of "const value = 1;\n" to the file at javascript_path
+expect truth (it succeeded)
+
+set php_path to repository path from root and the string form of "good_file.php"
+write the string form of "<?php\n" to the file at php_path
+expect truth (it succeeded)
+
+set hidden_directory to repository path from root and the string form of ".github"
+create a directory at hidden_directory
+expect truth (it succeeded)
+set hidden_file to repository path from hidden_directory and the string form of "HiddenFile.js"
+write the string form of "const hidden = true;\n" to the file at hidden_file
+expect truth (it succeeded)
+
+set large_path to repository path from root and the string form of "huge_file.cpp"
+write (the string form of "int value;\n") repeated 1001 times to the file at large_path
+expect truth (it succeeded)
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      file: snake_case\n    cpp:\n      file: camelCase\n    javascript:\n      file: snake_case\n"
+expect truth (loaded's succeeded)
+set rules to loaded's conventions
+
+set scanned to scan repository tree at root
+expect truth (scanned's succeeded)
+set tree to scanned's tree
+expect truth (tree includes language "cpp")
+expect truth (tree includes language "javascript")
+expect truth (tree includes language "php")
+set entries to tree's entries
+set entry_position to 0
+loop while entry_position < the length of entries:
+    set scanned_entry to @intrinsic("cast", the item at entry_position in entries, a repository entry)
+    expect falsehood (scanned_entry's relative path contains ".github")
+    set entry_position to entry_position + 1
+
+set directory_rename to the next directory rename in tree using rules
+expect truth (directory_rename's found)
+expect directory_rename's source relative path to equal "BadDir/InnerDir"
+expect directory_rename's target relative path to equal "BadDir/inner_dir"
+
+set file_rename to the next file rename for "javascript" in tree using rules
+expect truth (file_rename's found)
+expect file_rename's source relative path to equal "BadDir/InnerDir/BadFile.js"
+expect file_rename's target relative path to equal "BadDir/InnerDir/bad_file.js"
+
+set large_files to check for source files larger than 1000 lines in tree
+expect truth (large_files's succeeded)
+expect the length of large_files's violations to equal 1
+expect the item at 0 in large_files's violations to equal "huge_file.cpp exceeds 1000 lines"
+expect the length of large_files's failures to equal 0
+free source file size result large_files
+
+free repository tree result scanned
+free conventions result loaded
+remove the filesystem tree at root
+expect truth (it succeeded)
+
+print "scanner: passed" as a line

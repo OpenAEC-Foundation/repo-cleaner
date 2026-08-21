@@ -1,0 +1,410 @@
+import conventions.dl
+import lib/filesystem.dl
+import lib/path.dl
+import lib/sort.dl
+import lib/text.dl
+
+class:
+    patterns:
+        [a|] repository entry
+    members:
+        absolute path as string
+        relative path as string
+        name as string
+        stem as string
+        suffix as string
+        directory as boolean
+        language as string
+
+class:
+    patterns:
+        [a|the|] repository tree
+    members:
+        root as string
+        entries as a pointer to list
+        PHP detected as boolean
+        C plus plus detected as boolean
+        JavaScript detected as boolean
+
+class:
+    patterns:
+        [a|the|] repository tree result
+    members:
+        succeeded as boolean
+        tree as a pointer to repository tree
+        error message as string
+
+class:
+    patterns:
+        [a|the|] rename candidate
+    members:
+        found as boolean
+        source path as string
+        target path as string
+        source relative path as string
+        target relative path as string
+        language as string
+
+class:
+    patterns:
+        [a|the|] source file size result
+    members:
+        succeeded as boolean
+        violations as a pointer to list
+        failures as a pointer to list
+
+local class:
+    patterns:
+        [a|] tree scan state
+    members:
+        succeeded as boolean
+        entries as a pointer to list
+        PHP detected as boolean
+        C plus plus detected as boolean
+        JavaScript detected as boolean
+        error message as string
+
+local function an empty repository tree pointer:
+    replacement:
+        0 as a pointer to repository tree
+
+function [the|] repository path style:
+    execute:
+        set outcome to the native path style
+        if outcome failed or outcome is unsupported:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+function repository path from {string:left} and {string:right}:
+    execute:
+        set outcome to left joined with right using the repository path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function relative path from {string:left} and {string:right}:
+    execute:
+        set outcome to left joined with right using the POSIX path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function parent repository path of {string:input}:
+    execute:
+        set outcome to the parent path of input using the repository path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function parent relative path of {string:input}:
+    execute:
+        set outcome to the parent path of input using the POSIX path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function [the|] source stem of {string:input}:
+    execute:
+        set outcome to the stem of input using the repository path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function [the|] source suffix of {string:input}:
+    execute:
+        set outcome to the suffix of input using the repository path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function an empty rename candidate:
+    replacement:
+        @intrinsic(
+            "construct",
+            a rename candidate,
+            false,
+            the string form of "",
+            the string form of "",
+            the string form of "",
+            the string form of "",
+            the string form of ""
+        )
+
+local function path {string:name} is ignored by the scanner:
+    execute:
+        if the length of name > 0 and the character at 0 in name as a 32 bit integer = 46:
+            return true
+        return name = "node_modules" or (name = "vendor" or name = "__pycache__")
+
+function [the|] language for source path {string:path}:
+    execute:
+        set extension to the lowercase form of (the source suffix of path)
+        if extension = ".php":
+            return the string form of "php"
+        if extension = ".js" or (extension = ".mjs" or (extension = ".cjs" or extension = ".jsx")):
+            return the string form of "javascript"
+        if extension = ".c" or (extension = ".cc" or (extension = ".cpp" or (extension = ".cxx" or (extension = ".h" or (extension = ".hh" or (extension = ".hpp" or extension = ".hxx")))))):
+            return the string form of "cpp"
+        return the string form of ""
+
+function path is a supported source file:
+    replacement:
+        the length of the language for source path path > 0
+
+local function report tree scan failure {string:message} using {a pointer to tree scan state:state}:
+    execute:
+        set state's succeeded to false
+        set state's error message to message
+
+local function scan directory {string:directory_path} relative to {string:relative_parent} using {a pointer to tree scan state:state}:
+    execute:
+        if the inverse of state's succeeded:
+            @intrinsic("return")
+        open the directory at directory_path and set enumeration to it
+        if enumeration failed:
+            report tree scan failure enumeration's error message using state
+            @intrinsic("return")
+
+        set reading to true
+        loop while reading and state's succeeded:
+            read the next directory entry from enumeration and set next_entry to it
+            if next_entry lookup failed:
+                report tree scan failure next_entry's error message using state
+                set reading to false
+            else if next_entry was absent:
+                set reading to false
+            else if the inverse of (path next_entry's name is ignored by the scanner):
+                set absolute_path to repository path from directory_path and next_entry's name
+                set relative_path to next_entry's name
+                if the length of relative_parent > 0:
+                    set relative_path to relative path from relative_parent and next_entry's name
+                if next_entry is a directory:
+                    set entry to @intrinsic(
+                        "construct",
+                        a repository entry,
+                        absolute_path,
+                        relative_path,
+                        next_entry's name,
+                        next_entry's name,
+                        the string form of "",
+                        true,
+                        the string form of ""
+                    )
+                    append entry to state's entries
+                    scan directory absolute_path relative to relative_path using state
+                else if next_entry is a regular file:
+                    set language to the language for source path absolute_path
+                    set entry_name to next_entry's name
+                    set entry_stem to the source stem of absolute_path
+                    set entry_suffix to the source suffix of absolute_path
+                    set entry to @intrinsic(
+                        "construct",
+                        a repository entry,
+                        absolute_path,
+                        relative_path,
+                        entry_name,
+                        entry_stem,
+                        entry_suffix,
+                        false,
+                        language
+                    )
+                    append entry to state's entries
+                    if language = "php":
+                        set state's PHP detected to true
+                    if language = "cpp":
+                        set state's C plus plus detected to true
+                    if language = "javascript":
+                        set state's JavaScript detected to true
+
+function scan repository tree at {string:root}:
+    execute:
+        set entries to an empty list of repository entry
+        set state_value to @intrinsic("construct", a tree scan state, true, entries, false, false, false, the string form of "")
+        allocate one slot of state_value and set state to it
+        scan directory root relative to the string form of "" using state
+        if the inverse of state's succeeded:
+            set message to state's error message
+            free entries
+            @intrinsic("destroy at", state)
+            @intrinsic("call", "libc", "free", nothing, state)
+            return @intrinsic("construct", a repository tree result, false, an empty repository tree pointer, message)
+        set tree_value to @intrinsic(
+            "construct",
+            the repository tree,
+            root,
+            entries,
+            state's PHP detected,
+            state's C plus plus detected,
+            state's JavaScript detected
+        )
+        allocate one slot of tree_value and set tree_pointer to it
+        @intrinsic("destroy at", state)
+        @intrinsic("call", "libc", "free", nothing, state)
+        return @intrinsic("construct", a repository tree result, true, tree_pointer, the string form of "")
+
+function {a pointer to repository tree:tree} includes language {string:language}:
+    execute:
+        if language = "php":
+            return tree's PHP detected
+        if language = "cpp":
+            return tree's C plus plus detected
+        if language = "javascript":
+            return tree's JavaScript detected
+        return false
+
+function [the|] detected language names in {a pointer to repository tree:tree}:
+    execute:
+        set detected_names to an empty list of string
+        if tree's C plus plus detected:
+            insert the string form of "cpp" into detected_names at index the length of detected_names
+        if tree's JavaScript detected:
+            insert the string form of "javascript" into detected_names at index the length of detected_names
+        if tree's PHP detected:
+            insert the string form of "php" into detected_names at index the length of detected_names
+        return detected_names
+
+local function [the|] path depth of {string:path}:
+    execute:
+        set separator_count to 0
+        set position to 0
+        loop while position < the length of path:
+            if the character at position in path as a 32 bit integer = 47:
+                set separator_count to separator_count + 1
+            set position to position + 1
+        return separator_count
+
+function [the|] next directory rename in {a pointer to repository tree:tree} using {a pointer to conventions:rules}:
+    execute:
+        set selected_index to 0 - 1
+        set selected_depth to 0 - 1
+        set directory_case to the directory case in rules
+        set entries to tree's entries
+        set position to 0
+        loop while position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if entry's directory and the inverse of (entry's name follows directory_case in rules):
+                set depth to the path depth of (entry's relative path)
+                if depth > selected_depth:
+                    set selected_index to position
+                    set selected_depth to depth
+                else if depth = selected_depth and selected_index >= 0:
+                    set selected to @intrinsic("cast", the item at selected_index in entries, a repository entry)
+                    if the bytewise comparison of entry's relative path with selected's relative path < 0:
+                        set selected_index to position
+            set position to position + 1
+        if selected_index < 0:
+            return an empty rename candidate
+        set selected to @intrinsic("cast", the item at selected_index in entries, a repository entry)
+        set target_name to convert selected's name to directory_case
+        if the length of target_name = 0:
+            set target_name to selected's name
+        set source_parent to parent repository path of selected's absolute path
+        set relative_parent to parent relative path of selected's relative path
+        set target_path to repository path from source_parent and target_name
+        set target_relative_path to target_name
+        if relative_parent != "." and the length of relative_parent > 0:
+            set target_relative_path to relative path from relative_parent and target_name
+        return @intrinsic(
+            "construct",
+            a rename candidate,
+            true,
+            selected's absolute path,
+            target_path,
+            selected's relative path,
+            target_relative_path,
+            the string form of ""
+        )
+
+function [the|] next file rename for {string:language} in {a pointer to repository tree:tree} using {a pointer to conventions:rules}:
+    execute:
+        set file_case to the case for language "file" in rules
+        if file_case = the no case:
+            return an empty rename candidate
+        set entries to tree's entries
+        set position to 0
+        loop while position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if the inverse of entry's directory and entry's language = language:
+                if the inverse of (entry's stem follows file_case in rules):
+                    set target_name to convert entry's stem to file_case
+                    if the length of target_name = 0:
+                        set target_name to entry's stem
+                    set target_name to target_name + entry's suffix
+                    set source_parent to parent repository path of entry's absolute path
+                    set relative_parent to parent relative path of entry's relative path
+                    set target_path to repository path from source_parent and target_name
+                    set target_relative_path to target_name
+                    if relative_parent != "." and the length of relative_parent > 0:
+                        set target_relative_path to relative path from relative_parent and target_name
+                    return @intrinsic(
+                        "construct",
+                        a rename candidate,
+                        true,
+                        entry's absolute path,
+                        target_path,
+                        entry's relative path,
+                        target_relative_path,
+                        language
+                    )
+            set position to position + 1
+        return an empty rename candidate
+
+local function [the|] line count of {string:text}:
+    execute:
+        if the length of text = 0:
+            return 0
+        set lines to 0
+        set position to 0
+        loop while position < the length of text:
+            if the character at position in text as a 32 bit integer = 10:
+                set lines to lines + 1
+            set position to position + 1
+        if the character at (the length of text - 1) in text as a 32 bit integer != 10:
+            set lines to lines + 1
+        return lines
+
+function check for source files larger than {integer:maximum_lines} lines in {a pointer to repository tree:tree}:
+    execute:
+        set violations to an empty list of string
+        set failures to an empty list of string
+        set entries to tree's entries
+        set position to 0
+        loop while position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if the inverse of entry's directory and the length of entry's language > 0:
+                read the file at entry's absolute path and set read_result to it
+                if read_result failed:
+                    set failure to entry's relative path + the string form of " could not be read: "
+                    set failure to failure + read_result's error message
+                    insert failure into failures at index the length of failures
+                else if the line count of read_result's contents > maximum_lines:
+                    set violation_message to entry's relative path + the string form of " exceeds "
+                    set violation_message to violation_message + the string form of maximum_lines
+                    set violation_message to violation_message + the string form of " lines"
+                    insert violation_message into violations at index the length of violations
+            set position to position + 1
+        sort violations stably in bytewise order
+        sort failures stably in bytewise order
+        return @intrinsic(
+            "construct",
+            a source file size result,
+            the length of failures = 0,
+            violations,
+            failures
+        )
+
+function free source file size result {source file size result:result}:
+    execute:
+        free result's violations
+        free result's failures
+
+function free repository tree {a pointer to repository tree:tree}:
+    execute:
+        free tree's entries
+        @intrinsic("destroy at", tree)
+        @intrinsic("call", "libc", "free", nothing, tree)
+
+function free repository tree result {repository tree result:outcome}:
+    execute:
+        if outcome's tree != (0 as a pointer to repository tree):
+            free repository tree outcome's tree

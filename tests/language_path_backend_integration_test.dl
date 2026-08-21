@@ -1,0 +1,97 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+
+set bad_directory to repository path from root and "BadDir"
+create a directory tree at bad_directory
+expect truth it succeeded
+set bad_module to repository path from bad_directory and "BadFile.js"
+write the string form of "export function goodFunction() { return 1; }\n" to the file at bad_module
+expect truth it succeeded
+set main_source to repository path from root and "main_file.js"
+write the string form of "import { goodFunction } from './BadDir/BadFile.js';\nconsole.log(goodFunction());\n" to the file at main_source
+expect truth it succeeded
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n"
+expect truth loaded's succeeded
+set backend to the default language backend for "javascript"
+set backends to an empty list of a pointer to language backend
+append backend to backends
+
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends, applying fixes true
+if the inverse of enforced's succeeded:
+    print enforced's error message as a line
+expect truth enforced's succeeded
+expect truth enforced's changed
+
+set renamed_directory to repository path from root and "bad_dir"
+set renamed_module to repository path from renamed_directory and "bad_file.js"
+set module_entry to the file system entry at renamed_module
+expect truth module_entry is a regular file
+set original_module_entry to the file system entry at bad_module
+expect truth original_module_entry was absent
+read the file at main_source and set updated_main to it
+expect truth updated_main succeeded
+expect truth (updated_main's contents contains "./bad_dir/bad_file.js")
+expect falsehood (updated_main's contents contains "BadDir")
+expect falsehood (updated_main's contents contains "BadFile")
+
+free convention enforcement result enforced
+free backends
+free language backend backend
+free conventions result loaded
+remove the filesystem tree at root
+expect truth it succeeded
+
+create a temporary directory
+set cpp_temporary to it
+expect truth cpp_temporary succeeded
+set cpp_root to cpp_temporary's directory path
+set cpp_bad_directory to repository path from cpp_root and "BadDir"
+create a directory tree at cpp_bad_directory
+expect truth it succeeded
+set cpp_bad_header to repository path from cpp_bad_directory and "BadHeader.hpp"
+write the string form of "int goodFunction();\n" to the file at cpp_bad_header
+expect truth it succeeded
+set cpp_main_source to repository path from cpp_root and "main.cpp"
+write the string form of "#include \"BadDir/BadHeader.hpp\"\nint main(){return goodFunction();}\n" to the file at cpp_main_source
+expect truth it succeeded
+set compile_commands_path to repository path from cpp_root and "compile_commands.json"
+set compile_commands to the string form of "[{\"directory\":\""
+set compile_commands to compile_commands + cpp_root
+set compile_commands to compile_commands + the string form of "\",\"command\":\"/usr/bin/clang++ -I. -c main.cpp\",\"file\":\"main.cpp\"}]\n"
+write compile_commands to the file at compile_commands_path
+expect truth it succeeded
+
+set cpp_loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    cpp:\n      function: camelCase\n      class: PascalCase\n      file: camelCase\n"
+expect truth cpp_loaded's succeeded
+set cpp_backend to the default language backend for "cpp"
+set cpp_backends to an empty list of a pointer to language backend
+append cpp_backend to cpp_backends
+
+set cpp_enforced to enforce conventions in working copy cpp_root for repository "demo" using cpp_loaded's conventions and cpp_backends, applying fixes true
+if the inverse of cpp_enforced's succeeded:
+    print cpp_enforced's error message as a line
+expect truth cpp_enforced's succeeded
+expect truth cpp_enforced's changed
+set cpp_renamed_directory to repository path from cpp_root and "bad_dir"
+set cpp_renamed_header to repository path from cpp_renamed_directory and "badHeader.hpp"
+set cpp_header_entry to the file system entry at cpp_renamed_header
+expect truth cpp_header_entry was found
+read the file at cpp_main_source and set cpp_updated_main to it
+expect truth cpp_updated_main succeeded
+expect truth (cpp_updated_main's contents contains "\"bad_dir/badHeader.hpp\"")
+expect falsehood (cpp_updated_main's contents contains "BadDir")
+expect falsehood (cpp_updated_main's contents contains "BadHeader")
+
+free convention enforcement result cpp_enforced
+free cpp_backends
+free language backend cpp_backend
+free conventions result cpp_loaded
+remove the filesystem tree at cpp_root
+expect truth it succeeded
+
+print "language path backend integration: passed" as a line

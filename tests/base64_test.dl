@@ -1,0 +1,18 @@
+import support.dl
+import ../src/base64.dl
+
+expect (the base64 encoding of the string form of "") to equal ""
+expect (the base64 encoding of the string form of "f") to equal "Zg=="
+expect (the base64 encoding of the string form of "fo") to equal "Zm8="
+expect (the base64 encoding of the string form of "foo") to equal "Zm9v"
+expect (the base64 encoding of the string form of "foobar") to equal "Zm9vYmFy"
+
+set decoded to decode the base64 text "SGVsbG8sIER5bkxleCE=\n"
+expect truth decoded's succeeded
+expect decoded's value to equal "Hello, DynLex!"
+
+set malformed to decode the base64 text "not base64!"
+expect falsehood malformed's succeeded
+expect malformed's error message to equal "Base64 text contains an invalid character"
+
+print "base64: passed" as a line
