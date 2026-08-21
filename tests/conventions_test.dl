@@ -12,8 +12,10 @@ expect (convert "OpenPDFStudio" to kebab case) to equal "open-pdf-studio"
 expect (convert "OpenPDFStudio" to snake case) to equal "open_pdf_studio"
 expect (convert "open_pdf_studio" to camel case) to equal "openPdfStudio"
 expect (convert "open_pdf_studio" to pascal case) to equal "OpenPdfStudio"
-expect (convert "one-two-three-four" to kebab case) to equal "ottf"
-expect (convert "one-two-three-four" to pascal case) to equal "Ottf"
+expect (convert "one-two-three-four" to kebab case) to equal "one-two-three-four"
+expect (convert "one-two-three-four" to pascal case) to equal "OneTwoThreeFour"
+expect (convert "dynlex_filesystem_staging_create" to camel case) to equal "dynlexFilesystemStagingCreate"
+expect (convert "dynlex_filesystem_staging_cancel" to camel case) to equal "dynlexFilesystemStagingCancel"
 
 expect truth ("open-pdf-studio" follows kebab case)
 expect falsehood ("Open-PDF-Studio" follows kebab case)

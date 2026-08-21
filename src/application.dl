@@ -79,7 +79,7 @@ function process code conventions in github repository {string:repository_addres
                 set error to error + cleaned's error message
             return a failed code convention repository result for repository_name reporting error
 
-        set enforced to enforce conventions in working copy workspace for repository repository_name using rules and backends, applying fixes fixing
+        set enforced to enforce conventions in working copy workspace for repository repository_name using rules and backends with git tools's Git executable, applying fixes fixing
         set report to enforced's report
         set succeeded to enforced's succeeded
         set error to enforced's error message

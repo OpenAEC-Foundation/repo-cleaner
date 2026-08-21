@@ -6,11 +6,14 @@ set temporary to it
 expect truth (temporary succeeded)
 set root to temporary's directory path
 
+set first_path to repository path from root and "first.js"
+write the string form of "function goodFunction() { return 0; }\n" to the file at first_path
+expect truth it succeeded
 set source_path to repository path from root and "sample.js"
 write the string form of "function BadFunction() { return 1; }\n" to the file at source_path
 expect truth it succeeded
 
-set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True,'renameProvider':True}}});assert read()['method']=='initialized';opened=read();assert opened['method']=='textDocument/didOpen';symbols=read();assert symbols['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':symbols['id'],'result':[{'name':'BadFunction','kind':12,'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':40}},'selectionRange':{'start':{'line':0,'character':9},'end':{'line':0,'character':20}}}]});rename=read();assert rename['method']=='textDocument/rename';uri=rename['params']['textDocument']['uri'];send({'jsonrpc':'2.0','id':rename['id'],'result':{'changes':{uri:[{'range':{'start':{'line':0,'character':9},'end':{'line':0,'character':20}},'newText':'badFunction'}]}}});assert read()['method']=='textDocument/didChange';assert read()['method']=='textDocument/didClose';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True,'renameProvider':True}}});assert read()['method']=='initialized';first=read();assert first['method']=='textDocument/didOpen' and first['params']['textDocument']['uri'].endswith('/first.js');symbols=read();assert symbols['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':symbols['id'],'result':[]});assert read()['method']=='textDocument/didClose';opened=read();assert opened['method']=='textDocument/didOpen' and opened['params']['textDocument']['uri'].endswith('/sample.js');symbols=read();assert symbols['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':symbols['id'],'result':[{'name':'BadFunction','kind':12,'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':40}},'selectionRange':{'start':{'line':0,'character':9},'end':{'line':0,'character':20}}}]});rename=read();assert rename['method']=='textDocument/rename';uri=rename['params']['textDocument']['uri'];send({'jsonrpc':'2.0','id':rename['id'],'result':{'changes':{uri:[{'range':{'start':{'line':0,'character':9},'end':{'line':0,'character':20}},'newText':'badFunction'}]}}});assert read()['method']=='textDocument/didChange';assert read()['method']=='textDocument/didClose';reopened=read();assert reopened['method']=='textDocument/didOpen' and reopened['params']['textDocument']['uri'].endswith('/sample.js');symbols=read();assert symbols['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':symbols['id'],'result':[]});assert read()['method']=='textDocument/didClose';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
 set backend_arguments to an empty list of string
 append the string form of "-u" to backend_arguments
 append the string form of "-c" to backend_arguments
@@ -19,9 +22,12 @@ set backend to a language backend named "javascript" using "python3" with backen
 
 set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      file: snake_case\n"
 expect truth loaded's succeeded
-set scanned to scan repository tree at root
-expect truth scanned's succeeded
-set tree to scanned's tree
+set entries to an empty list of repository entry
+append @intrinsic("construct", a repository entry, first_path, the string form of "first.js", the string form of "first.js", the string form of "first", the string form of ".js", false, the string form of "javascript", true) to entries
+append @intrinsic("construct", a repository entry, source_path, the string form of "sample.js", the string form of "sample.js", the string form of "sample", the string form of ".js", false, the string form of "javascript", true) to entries
+set tree_value to @intrinsic("construct", a repository tree, root, entries, false, false, true)
+allocate one slot of tree_value and set tree to it
+set scanned to @intrinsic("construct", a repository tree result, true, tree, the string form of "")
 set rules to loaded's conventions
 
 set begun to begin language session using backend in root
@@ -38,6 +44,9 @@ expect found's candidate's character as an integer to equal 9
 set renamed to apply symbol rename found's candidate through session
 expect truth renamed's succeeded
 expect truth renamed's changed
+set exhausted to find next "function" violation through session in tree with rules
+expect truth exhausted's succeeded
+expect falsehood exhausted's candidate's found
 set finished to finish language session session
 expect truth finished's succeeded
 read the file at source_path and set renamed_source to it
@@ -48,6 +57,111 @@ free repository tree result scanned
 free conventions result loaded
 free language backend backend
 remove the filesystem tree at root
+expect truth it succeeded
+
+create a temporary directory
+set qualified_temporary to it
+expect truth qualified_temporary succeeded
+set qualified_root to qualified_temporary's directory path
+set qualified_path to repository path from qualified_root and "sample.cpp"
+write the string form of "class TextDocument {\n void rebuildLineOffsets();\n void operator=();\n void BadMethod();\n};\n" to the file at qualified_path
+expect truth it succeeded
+set qualified_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ndef symbol(name,line,start,end): return {'name':name,'kind':6,'range':{'start':{'line':line,'character':0},'end':{'line':line,'character':end}},'selectionRange':{'start':{'line':line,'character':start},'end':{'line':line,'character':end}}}\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True}}});assert read()['method']=='initialized';assert read()['method']=='textDocument/didOpen';request=read();assert request['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':request['id'],'result':[{'name':'sample','kind':3,'range':{'start':{'line':0,'character':0},'end':{'line':4,'character':2}},'selectionRange':{'start':{'line':0,'character':0},'end':{'line':0,'character':5}},'children':[symbol('TextDocument::rebuildLineOffsets',1,6,24),symbol('TextDocument::operator=',2,6,15),symbol('TextDocument::BadMethod',3,6,15)]}]});assert read()['method']=='textDocument/didClose';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set qualified_arguments to an empty list of string
+append the string form of "-u" to qualified_arguments
+append the string form of "-c" to qualified_arguments
+append qualified_script to qualified_arguments
+set qualified_backend to a language backend named "cpp" using "python3" with qualified_arguments
+set qualified_loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    cpp:\n      function: camelCase\n      file: snake_case\n"
+expect truth qualified_loaded's succeeded
+set qualified_scanned to scan repository tree at qualified_root
+expect truth qualified_scanned's succeeded
+set qualified_begun to begin language session using qualified_backend in qualified_root
+expect truth qualified_begun's succeeded
+set qualified_found to find next "function" violation through qualified_begun's session in qualified_scanned's tree with qualified_loaded's conventions
+expect truth qualified_found's succeeded
+expect truth qualified_found's candidate's found
+expect qualified_found's candidate's name to equal "BadMethod"
+expect qualified_found's candidate's replacement to equal "badMethod"
+set qualified_finished to finish language session qualified_begun's session
+expect truth qualified_finished's succeeded
+free repository tree result qualified_scanned
+free conventions result qualified_loaded
+free language backend qualified_backend
+remove the filesystem tree at qualified_root
+expect truth it succeeded
+
+create a temporary directory
+set refusing_temporary to it
+expect truth refusing_temporary succeeded
+set refusing_root to refusing_temporary's directory path
+set refusing_path to repository path from refusing_root and "sample.js"
+set refusing_contents to the string form of "function BadFunction() { return 1; }\n"
+write refusing_contents to the file at refusing_path
+expect truth it succeeded
+set refusing_uri to the file URI for refusing_path interpreted as a native path
+expect truth refusing_uri succeeded
+set refusing_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'renameProvider':{'prepareProvider':True}}}});assert read()['method']=='initialized';assert read()['method']=='textDocument/didOpen';prepare=read();assert prepare['method']=='textDocument/prepareRename';send({'jsonrpc':'2.0','id':prepare['id'],'error':{'code':-32603,'message':'intentional symbol refusal'}});assert read()['method']=='textDocument/didClose';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set refusing_arguments to an empty list of string
+append the string form of "-u" to refusing_arguments
+append the string form of "-c" to refusing_arguments
+append refusing_script to refusing_arguments
+set refusing_backend to a language backend named "javascript" using "python3" with refusing_arguments
+set refusing_begun to begin language session using refusing_backend in refusing_root
+expect truth refusing_begun's succeeded
+set refusing_candidate to @intrinsic(
+    "construct",
+    a symbol candidate,
+    true,
+    refusing_path,
+    the string form of "sample.js",
+    refusing_uri's value,
+    the string form of "javascript",
+    the string form of "function",
+    the string form of "BadFunction",
+    the string form of "badFunction",
+    0,
+    9
+)
+set refused to apply symbol rename refusing_candidate through refusing_begun's session
+expect falsehood refused's succeeded
+expect falsehood refused's changed
+expect truth refused's refused
+expect truth (refused's error message contains "intentional symbol refusal")
+set refusing_finished to finish language session refusing_begun's session
+expect truth refusing_finished's succeeded
+read the file at refusing_path and set refusing_source to it
+expect truth refusing_source succeeded
+expect refusing_source's contents to equal refusing_contents
+free language backend refusing_backend
+remove the filesystem tree at refusing_root
+expect truth it succeeded
+
+create a temporary directory
+set burst_temporary to it
+expect truth burst_temporary succeeded
+set burst_root to burst_temporary's directory path
+set burst_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{}}});assert read()['method']=='initialized';burst=read();assert burst['method']=='custom/burst';\nfor i in range(1100):\n sys.stderr.write('x'*100);sys.stderr.flush();send({'jsonrpc':'2.0','method':'window/logMessage','params':{'type':3,'message':str(i)}})\nsend({'jsonrpc':'2.0','id':burst['id'],'result':True});shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set burst_arguments to an empty list of string
+append the string form of "-u" to burst_arguments
+append the string form of "-c" to burst_arguments
+append burst_script to burst_arguments
+set burst_backend to a language backend named "javascript" using "python3" with burst_arguments
+set burst_begun to begin language session using burst_backend in burst_root
+expect truth burst_begun's succeeded
+set burst_parameters to a new JSON-RPC object
+set burst_sent to the result of sending an LSP request "custom/burst" with burst_parameters using burst_begun's session's client
+free burst_parameters
+expect truth burst_sent succeeded
+set burst_response to receive reply to burst_sent from burst_begun's session's client
+expect truth burst_response succeeded
+expect (the kind of burst_response's result) as an integer to equal the JSON boolean kind
+expect truth the boolean of burst_response's result
+free burst_response
+set burst_finished to finish language session burst_begun's session
+expect truth burst_finished's succeeded
+free language backend burst_backend
+remove the filesystem tree at burst_root
 expect truth it succeeded
 
 print "language server: passed" as a line

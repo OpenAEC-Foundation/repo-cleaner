@@ -15,6 +15,7 @@ class:
         suffix as string
         directory as boolean
         language as string
+        supports symbol analysis as boolean
 
 class:
     patterns:
@@ -134,7 +135,21 @@ local function path {string:name} is ignored by the scanner:
     execute:
         if the length of name > 0 and the character at 0 in name as a 32 bit integer = 46:
             return true
-        return name = "node_modules" or (name = "vendor" or name = "__pycache__")
+        return name = "node_modules" or (name = "vendor" or (name = "third_party" or (name = "dist" or name = "__pycache__")))
+
+local function source {string:contents} supports symbol analysis:
+    execute:
+        set line_length to 0
+        set position to 0
+        loop while position < the length of contents:
+            if the character at position in contents as a 32 bit integer = 10:
+                set line_length to 0
+            else:
+                set line_length to line_length + 1
+                if line_length > 4096:
+                    return false
+            set position to position + 1
+        return true
 
 function [the|] language for source path {string:path}:
     execute:
@@ -188,7 +203,8 @@ local function scan directory {string:directory_path} relative to {string:relati
                         next_entry's name,
                         the string form of "",
                         true,
-                        the string form of ""
+                        the string form of "",
+                        false
                     )
                     append entry to state's entries
                     scan directory absolute_path relative to relative_path using state
@@ -197,6 +213,13 @@ local function scan directory {string:directory_path} relative to {string:relati
                     set entry_name to next_entry's name
                     set entry_stem to the source stem of absolute_path
                     set entry_suffix to the source suffix of absolute_path
+                    set analyzes_symbols to true
+                    if the length of language > 0:
+                        read the file at absolute_path and set source_read to it
+                        if source_read failed:
+                            report tree scan failure source_read's error message using state
+                        else:
+                            set analyzes_symbols to source source_read's contents supports symbol analysis
                     set entry to @intrinsic(
                         "construct",
                         a repository entry,
@@ -206,7 +229,8 @@ local function scan directory {string:directory_path} relative to {string:relati
                         entry_stem,
                         entry_suffix,
                         false,
-                        language
+                        language,
+                        analyzes_symbols
                     )
                     append entry to state's entries
                     if language = "php":
@@ -273,7 +297,16 @@ local function [the|] path depth of {string:path}:
             set position to position + 1
         return separator_count
 
-function [the|] next directory rename in {a pointer to repository tree:tree} using {a pointer to conventions:rules}:
+local function path {string:path} is excluded by {a pointer to list:excluded_paths}:
+    execute:
+        set position to 0
+        loop while position < the length of excluded_paths:
+            if the item at position in excluded_paths = path:
+                return true
+            set position to position + 1
+        return false
+
+function [the|] next directory rename in {a pointer to repository tree:tree} using {a pointer to conventions:rules} excluding {a pointer to list:excluded_paths}:
     execute:
         set selected_index to 0 - 1
         set selected_depth to 0 - 1
@@ -282,7 +315,8 @@ function [the|] next directory rename in {a pointer to repository tree:tree} usi
         set position to 0
         loop while position < the length of entries:
             set entry to @intrinsic("cast", the item at position in entries, a repository entry)
-            if entry's directory and the inverse of (entry's name follows directory_case in rules):
+            set included to the inverse of (path entry's relative path is excluded by excluded_paths)
+            if entry's directory and (included and the inverse of (entry's name follows directory_case in rules)):
                 set depth to the path depth of (entry's relative path)
                 if depth > selected_depth:
                     set selected_index to position
@@ -315,7 +349,7 @@ function [the|] next directory rename in {a pointer to repository tree:tree} usi
             the string form of ""
         )
 
-function [the|] next file rename for {string:language} in {a pointer to repository tree:tree} using {a pointer to conventions:rules}:
+function [the|] next file rename for {string:language} in {a pointer to repository tree:tree} using {a pointer to conventions:rules} excluding {a pointer to list:excluded_paths}:
     execute:
         set file_case to the case for language "file" in rules
         if file_case = the no case:
@@ -324,7 +358,8 @@ function [the|] next file rename for {string:language} in {a pointer to reposito
         set position to 0
         loop while position < the length of entries:
             set entry to @intrinsic("cast", the item at position in entries, a repository entry)
-            if the inverse of entry's directory and entry's language = language:
+            set included to the inverse of (path entry's relative path is excluded by excluded_paths)
+            if the inverse of entry's directory and (entry's language = language and included):
                 if the inverse of (entry's stem follows file_case in rules):
                     set target_name to convert entry's stem to file_case
                     if the length of target_name = 0:

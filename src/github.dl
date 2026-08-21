@@ -11,6 +11,37 @@ class:
 
 class:
     patterns:
+        [a|the|] git ignore check
+    members:
+        succeeded as boolean
+        ignored as boolean
+        error message as string
+
+function check whether {string:target} is ignored in {string:root} using {string:git_executable}:
+    execute:
+        set metadata_path to root + the string form of "/.git"
+        set metadata to the file system entry at metadata_path
+        if metadata lookup failed:
+            return @intrinsic("construct", a git ignore check, false, false, metadata's error message)
+        if the inverse of metadata was found:
+            return @intrinsic("construct", a git ignore check, true, false, the string form of "")
+
+        set arguments to an empty list of string
+        append the string form of "check-ignore" to arguments
+        append the string form of "--quiet" to arguments
+        append the string form of "--no-index" to arguments
+        append the string form of "--" to arguments
+        append target to arguments
+        set checked to run tool git_executable with arguments in root
+        free arguments
+        if checked's succeeded:
+            return @intrinsic("construct", a git ignore check, true, true, the string form of "")
+        if checked's launched and checked's exit code = (1 as a word sized integer):
+            return @intrinsic("construct", a git ignore check, true, false, the string form of "")
+        return @intrinsic("construct", a git ignore check, false, false, checked's error message)
+
+class:
+    patterns:
         [a|the|] github repository
     members:
         name as string

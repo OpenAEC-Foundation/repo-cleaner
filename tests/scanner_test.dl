@@ -25,6 +25,20 @@ set hidden_file to repository path from hidden_directory and the string form of 
 write the string form of "const hidden = true;\n" to the file at hidden_file
 expect truth (it succeeded)
 
+set third_party_directory to repository path from root and the string form of "third_party/BadVendor"
+create a directory tree at third_party_directory
+expect truth (it succeeded)
+set third_party_file to repository path from third_party_directory and the string form of "BadFile.cpp"
+write (the string form of "int vendor_value;\n") repeated 1001 times to the file at third_party_file
+expect truth (it succeeded)
+
+set distribution_directory to repository path from root and the string form of "package/dist"
+create a directory tree at distribution_directory
+expect truth (it succeeded)
+set distribution_file to repository path from distribution_directory and the string form of "BadBundle.js"
+write (the string form of "const generatedValue = true;\n") repeated 1001 times to the file at distribution_file
+expect truth (it succeeded)
+
 set large_path to repository path from root and the string form of "huge_file.cpp"
 write (the string form of "int value;\n") repeated 1001 times to the file at large_path
 expect truth (it succeeded)
@@ -44,14 +58,17 @@ set entry_position to 0
 loop while entry_position < the length of entries:
     set scanned_entry to @intrinsic("cast", the item at entry_position in entries, a repository entry)
     expect falsehood (scanned_entry's relative path contains ".github")
+    expect falsehood (scanned_entry's relative path contains "third_party")
+    expect falsehood (scanned_entry's relative path contains "dist")
     set entry_position to entry_position + 1
 
-set directory_rename to the next directory rename in tree using rules
+set excluded_renames to an empty list of string
+set directory_rename to the next directory rename in tree using rules excluding excluded_renames
 expect truth (directory_rename's found)
 expect directory_rename's source relative path to equal "BadDir/InnerDir"
 expect directory_rename's target relative path to equal "BadDir/inner_dir"
 
-set file_rename to the next file rename for "javascript" in tree using rules
+set file_rename to the next file rename for "javascript" in tree using rules excluding excluded_renames
 expect truth (file_rename's found)
 expect file_rename's source relative path to equal "BadDir/InnerDir/BadFile.js"
 expect file_rename's target relative path to equal "BadDir/InnerDir/bad_file.js"
@@ -62,6 +79,7 @@ expect the length of large_files's violations to equal 1
 expect the item at 0 in large_files's violations to equal "huge_file.cpp exceeds 1000 lines"
 expect the length of large_files's failures to equal 0
 free source file size result large_files
+free excluded_renames
 
 free repository tree result scanned
 free conventions result loaded

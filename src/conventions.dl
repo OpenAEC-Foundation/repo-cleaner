@@ -397,35 +397,9 @@ function [the|] number of words in {string:name}:
             set position to position + 1
         return count
 
-local function abbreviate {string:normalized} when it has more than three words:
-    execute:
-        set count to 1
-        set position to 0
-        loop while position < the length of normalized:
-            if the character at position in normalized as a 32 bit integer = 124:
-                set count to count + 1
-            set position to position + 1
-        if count <= 3:
-            return normalized
-        set result to a new string buffer containing count bytes
-        set read_position to 0
-        set write_position to 0
-        set at_word_start to true
-        loop while read_position < the length of normalized:
-            set character to the character at read_position in normalized
-            if character as a 32 bit integer = 124:
-                set at_word_start to true
-            else if at_word_start:
-                store character into the data of result at write_position
-                set write_position to write_position + 1
-                set at_word_start to false
-            set read_position to read_position + 1
-        return result
-
 function convert {string:name} to {integer:style}:
     execute:
         set normalized to normalized words from name
-        set normalized to abbreviate normalized when it has more than three words
         if style = the snake case or style = the kebab case:
             set separator to 95 as a byte
             if style = the kebab case:

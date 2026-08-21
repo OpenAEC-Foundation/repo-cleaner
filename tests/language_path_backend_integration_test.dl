@@ -21,7 +21,7 @@ set backend to the default language backend for "javascript"
 set backends to an empty list of a pointer to language backend
 append backend to backends
 
-set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends, applying fixes true
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends with git "git", applying fixes true
 if the inverse of enforced's succeeded:
     print enforced's error message as a line
 expect truth enforced's succeeded
@@ -72,7 +72,7 @@ set cpp_backend to the default language backend for "cpp"
 set cpp_backends to an empty list of a pointer to language backend
 append cpp_backend to cpp_backends
 
-set cpp_enforced to enforce conventions in working copy cpp_root for repository "demo" using cpp_loaded's conventions and cpp_backends, applying fixes true
+set cpp_enforced to enforce conventions in working copy cpp_root for repository "demo" using cpp_loaded's conventions and cpp_backends with git "git", applying fixes true
 if the inverse of cpp_enforced's succeeded:
     print cpp_enforced's error message as a line
 expect truth cpp_enforced's succeeded

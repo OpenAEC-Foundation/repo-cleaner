@@ -13,6 +13,7 @@ class:
         [a|the|] path rename preparation
     members:
         succeeded as boolean
+        refused as boolean
         edit as a pointer to a parsed workspace edit
         error message as string
 
@@ -22,6 +23,20 @@ local function an allocated failed path rename preparation reporting {string:mes
             "construct",
             a path rename preparation,
             false,
+            false,
+            0 as a pointer to a parsed workspace edit,
+            message
+        )
+        allocate one slot of value and set allocated_preparation to it
+        return allocated_preparation
+
+local function an allocated refused path rename preparation reporting {string:message}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            a path rename preparation,
+            false,
+            true,
             0 as a pointer to a parsed workspace edit,
             message
         )
@@ -34,6 +49,7 @@ local function an allocated successful path rename preparation containing {a poi
             "construct",
             a path rename preparation,
             true,
+            false,
             edit,
             the string form of ""
         )
@@ -250,6 +266,7 @@ function prepare references for path rename {rename candidate:candidate} through
         set response to receive reply to sent from client
         if response failed:
             set message to error reported by response
+            set refused to response's status = the JSON-RPC remote error status
             free response
             free parameters
             set closed to close path rename documents documents's URIs using client
@@ -257,6 +274,9 @@ function prepare references for path rename {rename candidate:candidate} through
             if the inverse of closed's succeeded:
                 set message to message + the string form of "; closing path-rename documents failed: "
                 set message to message + closed's error message
+                set refused to false
+            if refused:
+                return an allocated refused path rename preparation reporting message
             return an allocated failed path rename preparation reporting message
 
         set closed to close path rename documents documents's URIs using client

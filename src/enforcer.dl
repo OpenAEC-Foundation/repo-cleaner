@@ -1,6 +1,6 @@
 import language_server_paths.dl
 import reporting.dl
-import commands.dl
+import github.dl
 
 class:
     patterns:
@@ -17,6 +17,16 @@ local class:
     members:
         backend as a pointer to language backend
         session as a pointer to language session
+
+local class:
+    patterns:
+        [a|the|] path rename outcome
+    members:
+        succeeded as boolean
+        changed as boolean
+        refused as boolean
+        description as string
+        error message as string
 
 local class:
     patterns:
@@ -97,10 +107,91 @@ local function a successful language operation changed {boolean:changed} describ
             the string form of ""
         )
 
+local function a failed path rename changed {boolean:changed} reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a path rename outcome,
+            false,
+            changed,
+            false,
+            the string form of "",
+            message
+        )
+
+local function a refused path rename reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a path rename outcome,
+            false,
+            false,
+            true,
+            the string form of "",
+            message
+        )
+
+local function a successful path rename described by {string:description}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a path rename outcome,
+            true,
+            true,
+            false,
+            description,
+            the string form of ""
+        )
+
 local function the path rename {literal:description} for {rename candidate:candidate}:
     execute:
         set description to candidate's source relative path + the string form of " -> "
         return description + candidate's target relative path
+
+local function the refused path rename {literal:description} for {rename candidate:candidate} reporting {string:message}:
+    execute:
+        set description to the path rename description for candidate
+        set description to description + the string form of " (not safely preparable: "
+        set description to description + message
+        return description + the string form of ")"
+
+local function the refused symbol rename {literal:description} for {symbol candidate:candidate} reporting {string:message}:
+    execute:
+        set description to candidate's relative path + the string form of ": "
+        set description to description + candidate's name
+        set description to description + the string form of " -> "
+        set description to description + candidate's replacement
+        set description to description + the string form of " (not safely renamable: "
+        set description to description + message
+        return description + the string form of ")"
+
+local function rebase {a pointer to list:excluded_paths} after directory rename {rename candidate:candidate}:
+    execute:
+        set source to candidate's source relative path
+        set source_prefix to source + the string form of "/"
+        set position to 0
+        loop while position < the length of excluded_paths:
+            set excluded to the item at position in excluded_paths
+            if excluded = source:
+                replace item at index position in excluded_paths with candidate's target relative path
+            else if excluded has source_prefix at offset 0:
+                set suffix to the substring of excluded from (the length of source) spanning (the length of excluded - the length of source) bytes
+                replace item at index position in excluded_paths with candidate's target relative path + suffix
+            set position to position + 1
+
+local function {a pointer to conventions:rules} configure symbol conventions for {string:language}:
+    execute:
+        if the case for language "namespace" in rules != the no case:
+            return true
+        if the case for language "class" in rules != the no case:
+            return true
+        if the case for language "function" in rules != the no case:
+            return true
+        if the case for language "variable" in rules != the no case:
+            return true
+        if the case for language "constant" in rules != the no case:
+            return true
+        return the case for language "enum" in rules != the no case
 
 local function {a pointer to list:sessions} support path rename preparation:
     execute:
@@ -139,21 +230,26 @@ local function synchronize {a pointer to active language session:active} after {
             return a failed language operation changed true reporting message
         return a successful language operation changed false described by the string form of ""
 
-local function rename path {rename candidate:candidate} through {a pointer to list:sessions}:
+local function rename path {rename candidate:candidate} through {a pointer to list:sessions} using {string:git_executable}:
     execute:
         if candidate's source path = candidate's target path:
-            return a failed language operation changed false reporting the string form of "A path violates its convention but has no distinct replacement"
+            return a failed path rename changed false reporting the string form of "A path violates its convention but has no distinct replacement"
+        set first_active to the item at 0 in sessions
+        set workspace_root to first_active's session's root
+        set ignored to check whether candidate's target relative path is ignored in workspace_root using git_executable
+        if the inverse of ignored's succeeded:
+            return a failed path rename changed false reporting ignored's error message
+        if ignored's ignored:
+            return a refused path rename reporting (the string form of "Rename target is ignored by repository rules: ") + candidate's target relative path
         set target to the file system entry at candidate's target path
         if target lookup failed:
-            return a failed language operation changed false reporting target's error message
+            return a failed path rename changed false reporting target's error message
         if target was found:
-            return a failed language operation changed false reporting (the string form of "Rename target already exists: ") + candidate's target relative path
+            return a failed path rename changed false reporting (the string form of "Rename target already exists: ") + candidate's target relative path
 
         if the inverse of (sessions support path rename preparation):
             @intrinsic("call", "libc", "abort", nothing)
 
-        set first_active to the item at 0 in sessions
-        set workspace_root to first_active's session's root
         set preparations to an empty list of a pointer to path rename preparation
         set position to 0
         loop while position < the length of sessions:
@@ -163,20 +259,23 @@ local function rename path {rename candidate:candidate} through {a pointer to li
             append prepared to preparations
             if the inverse of prepared's succeeded:
                 set message to prepared's error message
+                set refused to prepared's refused
                 free path rename preparations preparations
-                return a failed language operation changed false reporting message
+                if refused:
+                    return a refused path rename reporting message
+                return a failed path rename changed false reporting message
             set position to position + 1
 
         set applied to apply path rename edits from preparations rooted at workspace_root
         free path rename preparations preparations
         if the inverse of applied's succeeded:
-            return applied
+            return a failed path rename changed applied's changed reporting applied's error message
         set changed to applied's changed
 
         rename the filesystem entry at candidate's source path to candidate's target path
         set renamed to it
         if renamed failed:
-            return a failed language operation changed changed reporting renamed's error message
+            return a failed path rename changed changed reporting renamed's error message
         set changed to true
 
         set position to 0
@@ -190,11 +289,11 @@ local function rename path {rename candidate:candidate} through {a pointer to li
                 set synchronization_error to session_result's error message
             set position to position + 1
         if the inverse of synchronized:
-            return a failed language operation changed true reporting synchronization_error
+            return a failed path rename changed true reporting synchronization_error
 
-        return a successful language operation changed true described by the path rename description for candidate
+        return a successful path rename described by the path rename description for candidate
 
-local function rename path {rename candidate:candidate} through the session for its language in {a pointer to list:sessions}:
+local function rename path {rename candidate:candidate} through the session for its language in {a pointer to list:sessions} using {string:git_executable}:
     execute:
         set position to 0
         loop while position < the length of sessions:
@@ -202,11 +301,11 @@ local function rename path {rename candidate:candidate} through the session for 
             set active_backend to active's backend
             if active_backend's language = candidate's language:
                 set selected to a list containing active
-                set result to rename path candidate through selected
+                set result to rename path candidate through selected using git_executable
                 free selected
                 return result
             set position to position + 1
-        return a failed language operation changed false reporting (the string form of "No language backend is active for ") + candidate's language
+        return a failed path rename changed false reporting (the string form of "No language backend is active for ") + candidate's language
 
 local function record mutation {string:description} as a fix if {boolean:fixing} in {a pointer to list:fixes} or {a pointer to list:remaining}:
     execute:
@@ -284,7 +383,7 @@ local function build enforcement result for {string:repository_name} succeeded {
             error
         )
 
-function enforce conventions in working copy {string:root} for repository {string:repository_name} using {a pointer to conventions:rules} and {a pointer to list:backends}, applying fixes {boolean:fixing}:
+function enforce conventions in working copy {string:root} for repository {string:repository_name} using {a pointer to conventions:rules} and {a pointer to list:backends} with git {string:git_executable}, applying fixes {boolean:fixing}:
     execute:
         set phases to an empty list of string
         append the string form of "directories" to phases
@@ -365,25 +464,31 @@ function enforce conventions in working copy {string:root} for repository {strin
             free repository tree result scanned
             return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
 
+        set excluded_path_renames to an empty list of string
         set searching to healthy
         loop while searching:
-            set candidate to the next directory rename in tree using rules
+            set candidate to the next directory rename in tree using rules excluding excluded_path_renames
             if the inverse of candidate's found:
                 set searching to false
             else:
                 if the inverse of (sessions support path rename preparation):
                     append the path rename description for candidate to remaining
-                    set searching to false
+                    append candidate's source relative path to excluded_path_renames
                 else:
-                    set renamed to rename path candidate through sessions
+                    set renamed to rename path candidate through sessions using git_executable
                     set changed to changed or renamed's changed
                     if the inverse of renamed's succeeded:
-                        set error to renamed's error message
-                        append error to failures
-                        set healthy to false
-                        set searching to false
+                        if renamed's refused:
+                            append the refused path rename description for candidate reporting renamed's error message to remaining
+                            append candidate's source relative path to excluded_path_renames
+                        else:
+                            set error to renamed's error message
+                            append error to failures
+                            set healthy to false
+                            set searching to false
                     else:
                         record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
+                        rebase excluded_path_renames after directory rename candidate
                         free repository tree result scanned
                         set scanned to scan repository tree at root
                         if the inverse of scanned's succeeded:
@@ -394,27 +499,32 @@ function enforce conventions in working copy {string:root} for repository {strin
                         else:
                             set tree to scanned's tree
 
+
         set session_position to 0
         loop while healthy and session_position < the length of sessions:
             set active to the item at session_position in sessions
             set active_backend to active's backend
             set searching to true
             loop while healthy and searching:
-                set candidate to the next file rename for active_backend's language in tree using rules
+                set candidate to the next file rename for active_backend's language in tree using rules excluding excluded_path_renames
                 if the inverse of candidate's found:
                     set searching to false
                 else:
                     if the inverse of (active's session supports path rename preparation):
                         append the path rename description for candidate to remaining
-                        set searching to false
+                        append candidate's source relative path to excluded_path_renames
                     else:
-                        set renamed to rename path candidate through the session for its language in sessions
+                        set renamed to rename path candidate through the session for its language in sessions using git_executable
                         set changed to changed or renamed's changed
                         if the inverse of renamed's succeeded:
-                            set error to renamed's error message
-                            append error to failures
-                            set healthy to false
-                            set searching to false
+                            if renamed's refused:
+                                append the refused path rename description for candidate reporting renamed's error message to remaining
+                                append candidate's source relative path to excluded_path_renames
+                            else:
+                                set error to renamed's error message
+                                append error to failures
+                                set healthy to false
+                                set searching to false
                         else:
                             record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
                             free repository tree result scanned
@@ -428,6 +538,41 @@ function enforce conventions in working copy {string:root} for repository {strin
                                 set tree to scanned's tree
             set session_position to session_position + 1
 
+        set C_plus_plus_symbol_renames_available to true
+        if tree includes language "cpp" and rules configure symbol conventions for "cpp":
+            set compilation_database_path to repository path from root and "compile_commands.json"
+            set compilation_database to the file system entry at compilation_database_path
+            if compilation_database lookup failed:
+                set error to compilation_database's error message
+                append error to failures
+                set healthy to false
+            else if compilation_database is not a regular file:
+                set C_plus_plus_symbol_renames_available to false
+                append the string form of "C++ symbol conventions require a root compile_commands.json; symbol renames were not attempted" to remaining
+
+        set JavaScript_symbol_renames_available to true
+        if healthy and (tree includes language "javascript" and rules configure symbol conventions for "javascript"):
+            set JavaScript_symbol_renames_available to false
+            set jsconfig_path to repository path from root and "jsconfig.json"
+            set jsconfig to the file system entry at jsconfig_path
+            if jsconfig lookup failed:
+                set error to jsconfig's error message
+                append error to failures
+                set healthy to false
+            else if jsconfig is a regular file:
+                set JavaScript_symbol_renames_available to true
+            if healthy and the inverse of JavaScript_symbol_renames_available:
+                set tsconfig_path to repository path from root and "tsconfig.json"
+                set tsconfig to the file system entry at tsconfig_path
+                if tsconfig lookup failed:
+                    set error to tsconfig's error message
+                    append error to failures
+                    set healthy to false
+                else if tsconfig is a regular file:
+                    set JavaScript_symbol_renames_available to true
+            if healthy and the inverse of JavaScript_symbol_renames_available:
+                append the string form of "JavaScript symbol conventions require a root jsconfig.json or tsconfig.json; symbol renames were not attempted" to remaining
+
         set categories to an empty list of string
         append the string form of "namespace" to categories
         append the string form of "class" to categories
@@ -439,8 +584,10 @@ function enforce conventions in working copy {string:root} for repository {strin
         loop while healthy and session_position < the length of sessions:
             set active to the item at session_position in sessions
             set active_session to active's session
+            set scans_symbols to active's backend's language != "cpp" or C_plus_plus_symbol_renames_available
+            set scans_symbols to scans_symbols and (active's backend's language != "javascript" or JavaScript_symbol_renames_available)
             set category_position to 0
-            loop while healthy and category_position < the length of categories:
+            loop while healthy and (scans_symbols and category_position < the length of categories):
                 set category to the item at category_position in categories
                 set searching to true
                 loop while healthy and searching:
@@ -456,15 +603,20 @@ function enforce conventions in working copy {string:root} for repository {strin
                         set renamed to apply symbol rename found's candidate through active_session
                         set changed to changed or renamed's changed
                         if the inverse of renamed's succeeded:
-                            set error to renamed's error message
-                            append error to failures
-                            set healthy to false
-                            set searching to false
+                            if renamed's refused:
+                                append the refused symbol rename description for found's candidate reporting renamed's error message to remaining
+                                exclude symbol rename found's candidate through active_session
+                            else:
+                                set error to renamed's error message
+                                append error to failures
+                                set healthy to false
+                                set searching to false
                         else:
                             record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
                 set category_position to category_position + 1
             set session_position to session_position + 1
         free categories
+
 
         finish sessions recording failures in failures
         if the length of failures > 0:
@@ -511,6 +663,7 @@ function enforce conventions in working copy {string:root} for repository {strin
                 set error to the item at 0 in size_check's failures
             free source file size result size_check
 
+        free excluded_path_renames
         free repository tree result scanned
         set publishable_change to fixing and changed
         return build enforcement result for repository_name succeeded healthy, changed publishable_change, with phases, languages, recorded_fixes, remaining, failures, and error error
