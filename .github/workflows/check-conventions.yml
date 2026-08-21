@@ -21,7 +21,7 @@ on:
         description: DynLex revision with stable structural variable-flow inference
         required: false
         type: string
-        default: explicit-pattern-literals
+        default: master
       llvm_project_ref:
         description: LLVM revision with transactional clangd file and directory renames
         required: false

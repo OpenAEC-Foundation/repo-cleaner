@@ -18,7 +18,7 @@ Repository naming and empty-repository findings use exact-title pinned issues. F
 
 ## Requirements
 
-- DynLex with stable structural variable-flow inference (`explicit-pattern-literals` until merged)
+- DynLex `master` with stable structural variable-flow inference
 - Git and an authenticated GitHub CLI
 - OpenAEC clangd with transactional file and directory rename support (`clangd-file-rename-core` until merged)
 - `clang-format`
@@ -79,7 +79,7 @@ The process exits nonzero after completing its work when it found violations, pu
 
 ## GitHub Actions
 
-Call `.github/workflows/check-conventions.yml` and provide a token with repository contents, issues, and pull-request access. The workflow checks repository naming and README state and publishes safe code-convention fixes. `dynlex_ref` and `llvm_project_ref` select the capability revisions; their defaults are the feature branches named in Requirements until those changes merge.
+Call `.github/workflows/check-conventions.yml` and provide a token with repository contents, issues, and pull-request access. The workflow checks repository naming and README state and publishes safe code-convention fixes. `dynlex_ref` defaults to DynLex `master`. `llvm_project_ref` defaults to the OpenAEC clangd feature branch named in Requirements until that support merges.
 
 ## License
 
