@@ -86,4 +86,32 @@ free conventions result loaded
 remove the filesystem tree at root
 expect truth (it succeeded)
 
+create a temporary directory
+set literal_temporary to it
+expect truth literal_temporary succeeded
+set literal_root to literal_temporary's directory path
+set config_path to repository path from literal_root and "vite.config.js"
+write the string form of "export default {};\n" to the file at config_path
+expect truth it succeeded
+set test_path to repository path from literal_root and "BadBrowser.test.js"
+write the string form of "export const value = 1;\n" to the file at test_path
+expect truth it succeeded
+set literal_rules to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      file: snake_case\n"
+expect truth literal_rules's succeeded
+set literal_scan to scan repository tree at literal_root
+expect truth literal_scan's succeeded
+set literal_exclusions to an empty list of string
+set literal_rename to the next file rename for "javascript" in literal_scan's tree using literal_rules's conventions excluding literal_exclusions
+expect truth literal_rename's found
+expect literal_rename's source relative path to equal "BadBrowser.test.js"
+expect literal_rename's target relative path to equal "bad_browser.test.js"
+append literal_rename's source relative path to literal_exclusions
+set no_config_rename to the next file rename for "javascript" in literal_scan's tree using literal_rules's conventions excluding literal_exclusions
+expect falsehood no_config_rename's found
+free literal_exclusions
+free repository tree result literal_scan
+free conventions result literal_rules
+remove the filesystem tree at literal_root
+expect truth it succeeded
+
 print "scanner: passed" as a line

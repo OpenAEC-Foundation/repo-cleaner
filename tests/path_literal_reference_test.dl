@@ -1,0 +1,44 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+set initialized_arguments to a list containing (the string form of "init")
+set initialized to run tool "git" with initialized_arguments in root
+free initialized_arguments
+expect truth initialized's succeeded
+set source to repository path from root and "PackageRegistry.mjs"
+write the string form of "export const value = 1;\n" to the file at source
+expect truth it succeeded
+set manifest_path to repository path from root and "package.json"
+write the string form of "{\"scripts\":{\"package\":\"node ./PackageRegistry.mjs\"}}\n" to the file at manifest_path
+expect truth it succeeded
+
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';prepared=False\nwhile True:\n message=read();method=message.get('method','')\n if method=='workspace/willRenameFiles': prepared=True;send({'jsonrpc':'2.0','id':message['id'],'result':None})\n elif method=='shutdown': assert prepared;send({'jsonrpc':'2.0','id':message['id'],'result':None});break\n elif 'id' in message: send({'jsonrpc':'2.0','id':message['id'],'result':[]})\nassert read()['method']=='exit'"
+set arguments to an empty list of string
+append the string form of "-u" to arguments
+append the string form of "-c" to arguments
+append script to arguments
+set backend to a language backend named "javascript" using "python3" with arguments
+set backends to a list containing backend
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      file: snake_case\n"
+expect truth loaded's succeeded
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends with git "git", applying fixes true
+expect truth enforced's succeeded
+expect falsehood enforced's changed
+expect the length of enforced's report's fixes to equal 0
+expect the length of enforced's report's remaining violations to equal 1
+expect the item at 0 in enforced's report's remaining violations to equal "PackageRegistry.mjs -> package_registry.mjs (not safely preparable: Explicit path literal PackageRegistry.mjs remains outside language-server edits in package.json)"
+set source_entry to the file system entry at source
+expect truth source_entry is a regular file
+
+free convention enforcement result enforced
+free conventions result loaded
+free backends
+free language backend backend
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "path literal reference: passed" as a line

@@ -1,4 +1,5 @@
 import language_server_paths.dl
+import path_literal_references.dl
 import reporting.dl
 import github.dl
 
@@ -265,6 +266,15 @@ local function rename path {rename candidate:candidate} through {a pointer to li
                     return a refused path rename reporting message
                 return a failed path rename changed false reporting message
             set position to position + 1
+
+        set references to prove explicit references to candidate are covered by preparations rooted at workspace_root using git_executable
+        if the inverse of references's succeeded:
+            free path rename preparations preparations
+            return a failed path rename changed false reporting references's error message
+        if the inverse of references's safe:
+            set message to references's error message
+            free path rename preparations preparations
+            return a refused path rename reporting message
 
         set applied to apply path rename edits from preparations rooted at workspace_root
         free path rename preparations preparations
