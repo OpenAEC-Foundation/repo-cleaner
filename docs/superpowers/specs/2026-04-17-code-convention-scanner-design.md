@@ -169,6 +169,10 @@ Reference update coverage includes, when safely rewritable:
 Reference updates are part of rename execution, not a separate reporting-only phase.
 Before a path mutation, the scanner must also prove that Git does not ignore the destination spelling. An ignored destination is report-only because ordinary publication would stage the tracked source deletion without its ignored replacement.
 
+File naming rules apply to the first filename segment. Dot-separated suffixes are explicit ecosystem literals and remain byte-identical, so `BadBrowser.test.js` becomes `bad_browser.test.js` while `vite.config.js` remains unchanged.
+
+Language-server preparation does not prove arbitrary manifest, workflow, documentation, or source-string references. Before applying a prepared path rename, the scanner must find occurrences of the source filename in every tracked or non-ignored untracked file. Every occurrence outside the renamed path must be in a document changed by the authoritative language-server workspace edit. Otherwise the rename is report-only and the unresolved file is named in the report.
+
 ## Order Of Operations
 
 The scanner must execute phases in this order:

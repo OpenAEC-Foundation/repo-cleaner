@@ -118,6 +118,24 @@ local function [the|] source suffix of {string:input}:
             @intrinsic("call", "libc", "abort", nothing)
         return outcome's value
 
+local function [the|] convention stem of {string:name}:
+    execute:
+        set position to 0
+        loop while position < the length of name:
+            if the character at position in name as a 32 bit integer = 46:
+                return the substring of name from 0 spanning position bytes
+            set position to position + 1
+        return name
+
+local function [the|] literal suffix of {string:name}:
+    execute:
+        set position to 0
+        loop while position < the length of name:
+            if the character at position in name as a 32 bit integer = 46:
+                return the substring of name from position spanning (the length of name - position) bytes
+            set position to position + 1
+        return the string form of ""
+
 local function an empty rename candidate:
     replacement:
         @intrinsic(
@@ -211,8 +229,8 @@ local function scan directory {string:directory_path} relative to {string:relati
                 else if next_entry is a regular file:
                     set language to the language for source path absolute_path
                     set entry_name to next_entry's name
-                    set entry_stem to the source stem of absolute_path
-                    set entry_suffix to the source suffix of absolute_path
+                    set entry_stem to the convention stem of entry_name
+                    set entry_suffix to the literal suffix of entry_name
                     set analyzes_symbols to true
                     if the length of language > 0:
                         read the file at absolute_path and set source_read to it

@@ -1,0 +1,90 @@
+import commands.dl
+import language_server_paths.dl
+import scanner.dl
+import lib/path.dl
+import lib/text.dl
+
+class:
+    patterns:
+        [a|the|] path literal reference proof
+    members:
+        succeeded as boolean
+        safe as boolean
+        error message as string
+
+local function a successful path literal reference proof:
+    replacement:
+        @intrinsic("construct", a path literal reference proof, true, true, the string form of "")
+
+local function a failed path literal reference proof reporting {string:message}:
+    replacement:
+        @intrinsic("construct", a path literal reference proof, false, false, message)
+
+local function an unsafe path literal reference proof reporting {string:message}:
+    replacement:
+        @intrinsic("construct", a path literal reference proof, true, false, message)
+
+local function [the|] filename of repository path {string:path}:
+    execute:
+        set outcome to the filename of path using the POSIX path style
+        if outcome failed:
+            @intrinsic("call", "libc", "abort", nothing)
+        return outcome's value
+
+local function {a pointer to list:preparations} edit {string:path}:
+    execute:
+        set uri to the file URI for path interpreted as a native path
+        if uri failed:
+            return false
+        set preparation_position to 0
+        loop while preparation_position < the length of preparations:
+            set preparation to @intrinsic("cast", the item at preparation_position in preparations, a pointer to path rename preparation)
+            set changes to preparation's edit's changes
+            set change_position to 0
+            loop while change_position < the length of changes:
+                set change to the workspace change at index change_position in changes
+                if change's kind = the workspace text change kind and change's uri = uri's value:
+                    return true
+                set change_position to change_position + 1
+            set preparation_position to preparation_position + 1
+        return false
+
+function prove explicit references to {rename candidate:candidate} are covered by {a pointer to list:preparations} rooted at {string:root} using {string:git_executable}:
+    execute:
+        set metadata to the file system entry at (repository path from root and ".git")
+        if metadata lookup failed:
+            return a failed path literal reference proof reporting metadata's error message
+        if metadata was absent:
+            return a successful path literal reference proof
+
+        set literal to the filename of repository path candidate's source relative path
+        set arguments to an empty list of string
+        append the string form of "grep" to arguments
+        append the string form of "--files-with-matches" to arguments
+        append the string form of "--fixed-strings" to arguments
+        append the string form of "--untracked" to arguments
+        append the string form of "--exclude-standard" to arguments
+        append the string form of "--" to arguments
+        append literal to arguments
+        set searched to run tool git_executable with arguments in root
+        free arguments
+        if the inverse of searched's succeeded:
+            if searched's launched and searched's exit code = (1 as a word sized integer):
+                return a successful path literal reference proof
+            return a failed path literal reference proof reporting searched's error message
+
+        set matches to searched's standard output split at the string form of "\n"
+        set position to 0
+        loop while position < the length of matches:
+            set relative_path to the item at position in matches
+            if the length of relative_path > 0 and relative_path != candidate's source relative path:
+                set absolute_path to repository path from root and relative_path
+                if the inverse of (preparations edit absolute_path):
+                    set message to the string form of "Explicit path literal " + literal
+                    set message to message + the string form of " remains outside language-server edits in "
+                    set message to message + relative_path
+                    free matches
+                    return an unsafe path literal reference proof reporting message
+            set position to position + 1
+        free matches
+        return a successful path literal reference proof
