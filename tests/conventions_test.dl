@@ -1,0 +1,53 @@
+import support.dl
+import ../src/conventions.dl
+
+expect (the words in "OpenPDFStudio") to equal "open|pdf|studio"
+expect (the words in "two-part_name") to equal "two|part|name"
+expect (the words in "HTMLParser") to equal "html|parser"
+expect (the words in "Open.PDF Studio") to equal "open|pdf|studio"
+expect (the number of words in "one-two-three-four") to equal 4
+expect (the number of words in "123") to equal 0
+
+expect (convert "OpenPDFStudio" to kebab case) to equal "open-pdf-studio"
+expect (convert "OpenPDFStudio" to snake case) to equal "open_pdf_studio"
+expect (convert "open_pdf_studio" to camel case) to equal "openPdfStudio"
+expect (convert "open_pdf_studio" to pascal case) to equal "OpenPdfStudio"
+expect (convert "one-two-three-four" to kebab case) to equal "ottf"
+expect (convert "one-two-three-four" to pascal case) to equal "Ottf"
+
+expect truth ("open-pdf-studio" follows kebab case)
+expect falsehood ("Open-PDF-Studio" follows kebab case)
+expect truth ("open_pdf_studio" follows snake case)
+expect truth ("open__pdf" follows snake case)
+expect truth ("openPdfStudio" follows camel case)
+expect falsehood ("OpenPdfStudio" follows camel case)
+expect truth ("OpenPdfStudio" follows pascal case)
+expect falsehood ("openPdfStudio" follows pascal case)
+
+set source to the string form of "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      function: snake_case\n      class: PascalCase\n      file: snake_case\n    cpp:\n      function: camelCase\n      class: PascalCase\n      file: camelCase\n"
+set loaded to load conventions from source
+expect truth (loaded's succeeded)
+set rules to loaded's conventions
+expect (the repository case in rules) to equal kebab case
+expect (the directory case in rules) to equal snake case
+expect (the case for "php" "function" in rules) to equal snake case
+expect (the case for "cpp" "file" in rules) to equal camel case
+expect (the case for "cpp" "variable" in rules) to equal no case
+free conventions result loaded
+
+set invalid_repository_case to load conventions from "naming:\n  repository:\n    case: SCREAMING_CASE\n  directory:\n    case: snake_case\n"
+expect falsehood (invalid_repository_case's succeeded)
+expect invalid_repository_case's error message to equal "Conventions define an unknown repository case"
+free conventions result invalid_repository_case
+
+set invalid_language_case to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      function: SCREAMING_CASE\n"
+expect falsehood (invalid_language_case's succeeded)
+expect invalid_language_case's error message to equal "Conventions define an unknown case for php.function"
+free conventions result invalid_language_case
+
+set invalid_pattern to load conventions from "naming:\n  case:\n    snake_case:\n      pattern:\n        nested: value\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n"
+expect falsehood (invalid_pattern's succeeded)
+expect invalid_pattern's error message to equal "Conventions must define naming.case.snake_case.pattern as text"
+free conventions result invalid_pattern
+
+print "conventions: passed" as a line

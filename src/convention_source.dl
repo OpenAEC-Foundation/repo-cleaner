@@ -1,0 +1,116 @@
+import github.dl
+import conventions.dl
+import lib/filesystem.dl
+import lib/host.dl
+import lib/path.dl
+import lib/random.dl
+
+class:
+    patterns:
+        [a|the|] convention source result
+    members:
+        succeeded as boolean
+        contents as string
+        error message as string
+
+local function a failed convention source result reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a convention source result,
+            false,
+            the string form of "",
+            message
+        )
+
+local function convention source containing {string:contents}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a convention source result,
+            true,
+            contents,
+            the string form of ""
+        )
+
+local function validated convention source containing {string:contents}:
+    execute:
+        set loaded to load conventions from contents
+        if the inverse of loaded's succeeded:
+            set message to loaded's error message
+            free conventions result loaded
+            return a failed convention source result reporting message
+        free conventions result loaded
+        return convention source containing contents
+
+local function joined native path from {string:left} and {string:right}:
+    execute:
+        set style_result to the native path style
+        if style_result failed or style_result is unsupported:
+            return @intrinsic(
+                "construct",
+                a path result,
+                false,
+                the string form of "",
+                style_result's error message
+            )
+        return left joined with right using style_result's value
+
+function load the convention source using {a pointer to github tools:tools} cached in {string:cache_root}:
+    execute:
+        create a directory tree at cache_root and set directory_creation to it
+        if directory_creation failed:
+            return a failed convention source result reporting directory_creation's error message
+        set cache_path to joined native path from cache_root and "openaec-conventions.yaml"
+        if cache_path failed:
+            return a failed convention source result reporting cache_path's error message
+
+        set entry to the file system entry at cache_path's value
+        if entry lookup failed:
+            return a failed convention source result reporting entry's error message
+        if entry was found:
+            if entry is not a regular file:
+                return a failed convention source result reporting the string form of "The convention cache path is not a regular file"
+            if entry does not support modification times:
+                return a failed convention source result reporting the string form of "The convention cache does not support modification times"
+            set now to the current time
+            set modified to entry's modification time
+            if modified's seconds > now:
+                return a failed convention source result reporting the string form of "The convention cache modification time is in the future"
+            if now - modified's seconds < 86400:
+                read the file at cache_path's value and set cache_read to it
+                if cache_read failed:
+                    return a failed convention source result reporting cache_read's error message
+                set validated to validated convention source containing cache_read's contents
+                if the inverse of validated's succeeded:
+                    delete the filesystem entry at cache_path's value and set deletion to it
+                    if deletion failed:
+                        set message to validated's error message + the string form of "; deleting the invalid cache failed: "
+                        set message to message + deletion's error message
+                        return a failed convention source result reporting message
+                    return validated
+                return validated
+
+        set fetched to fetch "conventions.yaml" from github repository "OpenAEC-Foundation/conventions" using tools
+        if the inverse of fetched's succeeded:
+            return a failed convention source result reporting fetched's error message
+        set validated to validated convention source containing fetched's output
+        if the inverse of validated's succeeded:
+            return validated
+        create a staging file beside cache_path's value and set staging to it
+        if staging failed:
+            return a failed convention source result reporting staging's error message
+        write fetched's output to staging and set staging to it
+        if staging failed:
+            return a failed convention source result reporting staging's error message
+        commit staging where overwriting is true and durability is false and set committed to it
+        if committed failed:
+            return a failed convention source result reporting committed's error message
+        return validated
+
+function load the convention source using {a pointer to github tools:tools}:
+    execute:
+        set cache to the user cache directory
+        if cache failed or cache is unsupported:
+            return a failed convention source result reporting cache's error message
+        return load the convention source using tools cached in cache's value

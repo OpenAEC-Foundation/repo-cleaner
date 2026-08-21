@@ -1,0 +1,113 @@
+import support.dl
+import ../src/application.dl
+
+local function make executable {string:path}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "+x" to arguments
+        append path to arguments
+        set completed to run tool "chmod" with arguments
+        free arguments
+        expect truth completed's succeeded
+
+local function a test backend:
+    execute:
+        set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized'\nfor old,new in [('BadDir','bad_dir'),('BadFile.js','bad_file.js')]:\n request=read();assert request['method']=='workspace/willRenameFiles';change=request['params']['files'][0];assert change['oldUri'].endswith('/'+old) and change['newUri'].endswith('/'+new);send({'jsonrpc':'2.0','id':request['id'],'result':None});assert read()['method']=='workspace/didRenameFiles'\nshutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+        set arguments to an empty list of string
+        append the string form of "-u" to arguments
+        append the string form of "-c" to arguments
+        append script to arguments
+        return a language backend named "javascript" using "python3" with arguments
+
+local function test github executable at {string:path} logging to {string:log_path} allowing publication {boolean:allow_publication}:
+    execute:
+        set allowed to the string form of "False"
+        if allow_publication:
+            set allowed to the string form of "True"
+        set log_node to a new JSON-RPC text for log_path
+        set escaped_log_path to the compact JSON form of log_node
+        free log_node
+        set script to the string form of "#!/usr/bin/env python3\nimport json,os,sys\nargs=sys.argv[1:]\nwith open("
+        set script to script + escaped_log_path
+        set script to script + the string form of ",'a') as log: log.write(' '.join(args)+'\\n')\nallow="
+        set script to script + allowed
+        set script to script + the string form of "\nif args[:2]==['repo','clone']:\n os.makedirs(os.path.join(args[3],'BadDir'));open(os.path.join(args[3],'BadDir','BadFile.js'),'w').write('export const value = 1;\\n');sys.exit(0)\nif args[:2]==['pr','list']:\n print('[]');sys.exit(0)\nif args[:2]==['pr','create'] and allow:\n print('https://example.test/pull/9');sys.exit(0)\nif args[:2]==['pr','create']: sys.exit(9)\nprint('unexpected gh arguments: '+repr(args),file=sys.stderr);sys.exit(2)\n"
+        write script to the file at path
+        expect truth it succeeded
+        make executable path
+
+local function test git executable at {string:path} logging to {string:log_path} allowing publication {boolean:allow_publication}:
+    execute:
+        set allowed to the string form of "False"
+        if allow_publication:
+            set allowed to the string form of "True"
+        set log_node to a new JSON-RPC text for log_path
+        set escaped_log_path to the compact JSON form of log_node
+        free log_node
+        set script to the string form of "#!/usr/bin/env python3\nimport sys\nargs=sys.argv[1:]\nwith open("
+        set script to script + escaped_log_path
+        set script to script + the string form of ",'a') as log: log.write(' '.join(args)+'\\n')\nallow="
+        set script to script + allowed
+        set script to script + the string form of "\nif args and args[0]=='checkout': sys.exit(0)\nif args[:3]==['diff','--cached','--quiet'] and allow: sys.exit(1)\nif 'commit' in args and allow:\n assert args[:5]==['-c','user.name=OpenAEC Convention Enforcer','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit'];sys.exit(0)\nif args and args[0] in ('add','push') and allow: sys.exit(0)\nprint('publication was not expected: '+repr(args),file=sys.stderr);sys.exit(8)\n"
+        write script to the file at path
+        expect truth it succeeded
+        make executable path
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      file: snake_case\n"
+expect truth loaded's succeeded
+set backend to a test backend
+set backends to an empty list of a pointer to language backend
+append backend to backends
+
+set publishing_log to repository path from root and "publishing.log"
+set publishing_gh to repository path from root and "publishing-gh"
+set publishing_git to repository path from root and "publishing-git"
+test github executable at publishing_gh logging to publishing_log allowing publication true
+test git executable at publishing_git logging to publishing_log allowing publication true
+set publishing_tools to github tools using publishing_gh and publishing_git
+
+set published to process code conventions in github repository "Example/demo" named "demo" from "main" using publishing_tools and loaded's conventions with backends, publishing fixes true
+expect truth published's succeeded
+expect truth published's violations
+expect truth published's changed
+expect published's report's pull request state to equal "open"
+expect the length of published's report's fixes to equal 2
+read the file at publishing_log and set publishing_actions to it
+expect truth publishing_actions succeeded
+expect truth (publishing_actions's contents contains "push --force-with-lease origin repo-cleaner/convention-fixes")
+expect truth (publishing_actions's contents contains "pr create")
+free code convention repository result published
+free github tools publishing_tools
+
+set checking_log to repository path from root and "checking.log"
+set checking_gh to repository path from root and "checking-gh"
+set checking_git to repository path from root and "checking-git"
+test github executable at checking_gh logging to checking_log allowing publication false
+test git executable at checking_git logging to checking_log allowing publication false
+set checking_tools to github tools using checking_gh and checking_git
+
+set checked to process code conventions in github repository "Example/demo" named "demo" from "main" using checking_tools and loaded's conventions with backends, publishing fixes false
+expect truth checked's succeeded
+expect truth checked's violations
+expect falsehood checked's changed
+expect checked's report's pull request state to equal "none"
+read the file at checking_log and set checking_actions to it
+expect truth checking_actions succeeded
+expect falsehood (checking_actions's contents contains " add ")
+expect falsehood (checking_actions's contents contains "push")
+expect falsehood (checking_actions's contents contains "pr ")
+free code convention repository result checked
+free github tools checking_tools
+
+free backends
+free language backend backend
+free conventions result loaded
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "application: passed" as a line

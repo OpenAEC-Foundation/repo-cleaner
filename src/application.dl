@@ -1,0 +1,144 @@
+import enforcer.dl
+import github.dl
+
+class:
+    patterns:
+        [a|the|] code convention repository result
+    members:
+        succeeded as boolean
+        violations as boolean
+        changed as boolean
+        report as a pointer to convention report
+        error message as string
+
+local function a code convention repository result succeeded {boolean:succeeded}, with violations {boolean:violations}, changed {boolean:changed}, report {a pointer to convention report:report}, and error {string:error}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a code convention repository result,
+            succeeded,
+            violations,
+            changed,
+            report,
+            error
+        )
+
+local function a failed code convention repository result for {string:repository_name} reporting {string:error}:
+    execute:
+        set phases to an empty list of string
+        set languages to an empty list of string
+        set fixes to an empty list of string
+        set remaining to an empty list of string
+        set failures to an empty list of string
+        append error to failures
+        set report to a convention report for repository_name with phases phases, languages languages, fixes fixes, remaining violations remaining, failures failures, and pull request state "none"
+        return a code convention repository result succeeded false, with violations true, changed false, report report, and error error
+
+local function the report {a pointer to convention report:report} has violations:
+    execute:
+        set count to the length of report's fixes
+        set count to count + the length of report's remaining violations
+        set count to count + the length of report's failures
+        return count > 0
+
+local function report publication failure {string:message} in {a pointer to convention report:report}:
+    execute:
+        append message to report's failures
+
+local function close {github pull request result:existing} in {string:repository_address} if present using {a pointer to github tools:tools}, recording state in {a pointer to convention report:report}:
+    execute:
+        if the inverse of existing's found:
+            return @intrinsic(
+                "construct",
+                a github operation result,
+                true,
+                the string form of "",
+                the string form of ""
+            )
+        set requested to close pull request existing's number in repository_address using tools
+        if requested's succeeded:
+            set report's pull request state to the string form of "closed"
+        return requested
+
+function process code conventions in github repository {string:repository_address} named {string:repository_name} from {string:base_branch} using {a pointer to github tools:tools} and {a pointer to conventions:rules} with {a pointer to list:backends}, publishing fixes {boolean:fixing}:
+    execute:
+        create a temporary directory
+        set temporary to it
+        if temporary failed:
+            set temporary_error to temporary's error message
+            return a failed code convention repository result for repository_name reporting temporary_error
+        set workspace to temporary's directory path
+
+        set checked_out to prepare scanner checkout of repository_address at workspace from base_branch using tools
+        if the inverse of checked_out's succeeded:
+            set error to checked_out's error message
+            remove the filesystem tree at workspace
+            set cleaned to it
+            if cleaned failed:
+                set error to error + the string form of "; cleanup failed: "
+                set error to error + cleaned's error message
+            return a failed code convention repository result for repository_name reporting error
+
+        set enforced to enforce conventions in working copy workspace for repository repository_name using rules and backends, applying fixes fixing
+        set report to enforced's report
+        set succeeded to enforced's succeeded
+        set error to enforced's error message
+        set published_change to false
+
+        if succeeded and fixing:
+            set existing to find scanner pull request in repository_address using tools
+            if the inverse of existing's succeeded:
+                set succeeded to false
+                set error to existing's error message
+                report publication failure error in report
+            else:
+                if existing's found:
+                    set report's pull request state to the string form of "open"
+
+                if enforced's changed:
+                    set published to publish scanner changes in workspace using tools
+                    if the inverse of published's succeeded:
+                        set succeeded to false
+                        set error to published's error message
+                        report publication failure error in report
+                    else if published's changed:
+                        set report's pull request state to the string form of "open"
+                        set body to the pull request body for report
+                        if existing's found:
+                            set requested to update pull request existing's number in repository_address titled "Apply repository convention fixes" with body body using tools
+                        else:
+                            set requested to create scanner pull request in repository_address against base_branch titled "Apply repository convention fixes" with body body using tools
+                        if the inverse of requested's succeeded:
+                            set succeeded to false
+                            set error to requested's error message
+                            report publication failure error in report
+                        else:
+                            set published_change to true
+                    else:
+                        set requested to close existing in repository_address if present using tools, recording state in report
+                        if the inverse of requested's succeeded:
+                            set succeeded to false
+                            set error to requested's error message
+                            report publication failure error in report
+                else:
+                    set requested to close existing in repository_address if present using tools, recording state in report
+                    if the inverse of requested's succeeded:
+                        set succeeded to false
+                        set error to requested's error message
+                        report publication failure error in report
+                free github pull request result existing
+
+        remove the filesystem tree at workspace
+        set cleaned to it
+        if cleaned failed:
+            set succeeded to false
+            if the length of error = 0:
+                set error to cleaned's error message
+            report publication failure (the string form of "Workspace cleanup failed: ") + cleaned's error message in report
+
+        set violations to the report report has violations
+        return a code convention repository result succeeded succeeded, with violations violations, changed published_change, report report, and error error
+
+function free code convention repository result {code convention repository result:outcome}:
+    execute:
+        free convention report outcome's report

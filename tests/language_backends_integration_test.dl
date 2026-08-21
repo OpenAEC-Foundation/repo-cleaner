@@ -1,0 +1,119 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+
+set javascript_path to repository path from root and "sample.js"
+write the string form of "function BadFunction(value) { return BadFunction(value - 1); }\n" to the file at javascript_path
+expect truth it succeeded
+
+set php_path to repository path from root and "sample.php"
+write the string form of "<?php\nclass Sample { public function badFunction($value) { return $value; } }\n" to the file at php_path
+expect truth it succeeded
+
+set cpp_path to repository path from root and "sample.cpp"
+write the string form of "int bad_function(int value){return value;}\n" to the file at cpp_path
+expect truth it succeeded
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      function: snake_case\n      class: PascalCase\n      file: snake_case\n    cpp:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n    javascript:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n"
+expect truth loaded's succeeded
+set rules to loaded's conventions
+set scanned to scan repository tree at root
+expect truth scanned's succeeded
+set tree to scanned's tree
+
+set javascript_backend to the default language backend for "javascript"
+set javascript_begun to begin language session using javascript_backend in root
+if the inverse of javascript_begun's succeeded:
+    print javascript_begun's error message as a line
+expect truth javascript_begun's succeeded
+set javascript_session to javascript_begun's session
+expect truth (javascript_session supports path rename preparation)
+expect falsehood (javascript_session accepts path rename notifications)
+set javascript_found to find next "function" violation through javascript_session in tree with rules
+expect truth javascript_found's succeeded
+expect truth javascript_found's candidate's found
+expect javascript_found's candidate's replacement to equal "badFunction"
+set javascript_renamed to apply symbol rename javascript_found's candidate through javascript_session
+expect truth javascript_renamed's succeeded
+set javascript_finished to finish language session javascript_session
+expect truth javascript_finished's succeeded
+free language backend javascript_backend
+
+set php_backend to the default language backend for "php"
+set php_begun to begin language session using php_backend in root
+if the inverse of php_begun's succeeded:
+    print php_begun's error message as a line
+expect truth php_begun's succeeded
+set php_session to php_begun's session
+expect falsehood (php_session supports path rename preparation)
+expect falsehood (php_session accepts path rename notifications)
+set php_found to find next "function" violation through php_session in tree with rules
+expect truth php_found's succeeded
+expect truth php_found's candidate's found
+expect php_found's candidate's replacement to equal "bad_function"
+set php_renamed to apply symbol rename php_found's candidate through php_session
+expect truth php_renamed's succeeded
+set php_finished to finish language session php_session
+expect truth php_finished's succeeded
+free language backend php_backend
+
+set cpp_backend to the default language backend for "cpp"
+set cpp_begun to begin language session using cpp_backend in root
+if the inverse of cpp_begun's succeeded:
+    print cpp_begun's error message as a line
+expect truth cpp_begun's succeeded
+set cpp_session to cpp_begun's session
+expect truth (cpp_session supports path rename preparation)
+expect truth (cpp_session accepts path rename notifications)
+set cpp_found to find next "function" violation through cpp_session in tree with rules
+expect truth cpp_found's succeeded
+expect truth cpp_found's candidate's found
+expect cpp_found's candidate's replacement to equal "badFunction"
+set cpp_renamed to apply symbol rename cpp_found's candidate through cpp_session
+expect truth cpp_renamed's succeeded
+set cpp_finished to finish language session cpp_session
+expect truth cpp_finished's succeeded
+free language backend cpp_backend
+
+read the file at javascript_path and set javascript_source to it
+expect truth (javascript_source succeeded)
+expect truth (javascript_source's contents contains "function badFunction")
+expect falsehood (javascript_source's contents contains "BadFunction")
+
+read the file at php_path and set php_source to it
+expect truth (php_source succeeded)
+expect truth (php_source's contents contains "public function bad_function")
+
+read the file at cpp_path and set cpp_source to it
+expect truth (cpp_source succeeded)
+expect truth (cpp_source's contents contains "int badFunction")
+
+delete the filesystem entry at javascript_path
+expect truth it succeeded
+delete the filesystem entry at php_path
+expect truth it succeeded
+set cpp_backend to the default language backend for "cpp"
+set cpp_backends to an empty list of a pointer to language backend
+append cpp_backend to cpp_backends
+set formatted to enforce conventions in working copy root for repository "demo" using rules and cpp_backends, applying fixes true
+expect truth (formatted's succeeded)
+expect truth (formatted's changed)
+expect the length of formatted's report's fixes to equal 1
+expect the item at 0 in formatted's report's fixes to equal "Formatted sample.cpp"
+read the file at cpp_path and set formatted_source to it
+expect truth (formatted_source succeeded)
+expect formatted_source's contents to equal "int badFunction(int value) { return value; }\n"
+free convention enforcement result formatted
+free cpp_backends
+free language backend cpp_backend
+
+free repository tree result scanned
+free conventions result loaded
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "language backends integration: passed" as a line

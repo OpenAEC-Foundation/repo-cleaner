@@ -1,0 +1,61 @@
+import support.dl
+import ../src/repository_checks.dl
+import ../src/scanner.dl
+import lib/filesystem.dl
+
+local function make executable {string:path}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "+x" to arguments
+        append path to arguments
+        set completed to run tool "chmod" with arguments
+        free arguments
+        expect truth (completed's succeeded)
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+set fake_gh to repository path from root and "gh"
+set script to "#!/usr/bin/env python3\nimport base64,json,os,sys\na=sys.argv[1:];marker=__file__+'.issue'\nif a[:2]==['issue','list']:\n q=a[a.index('--search')+1];title=q.split('\"')[1]\n if os.path.exists(marker): print(json.dumps([{'number':8,'title':title,'state':'OPEN','isPinned':True}]))\n else: print('[]')\n sys.exit(0)\nif a[:2]==['issue','create']: open(marker,'w').close();print('https://example.test/issues/8');sys.exit(0)\nif a[:2] in (['issue','edit'],['issue','pin'],['issue','unpin'],['issue','close'],['issue','reopen']): sys.exit(0)\nif a and a[0]=='api' and '--method' in a:\n if a[a.index('--method')+1]=='PATCH': sys.exit(0)\n payload=json.load(sys.stdin);assert base64.b64decode(payload['content'])==b'standard license' and payload['sha']=='old-sha';sys.exit(0)\nif a and a[0]=='api' and 'contents/README.md' in a[1]:\n print(json.dumps({'content':base64.b64encode(b'# Demo').decode(),'sha':'readme-sha'}));sys.exit(0)\nif a and a[0]=='api' and 'contents/LICENSE.md' in a[1]:\n print(json.dumps({'content':base64.b64encode(b'old license').decode(),'sha':'old-sha'}));sys.exit(0)\nprint('unexpected: '+repr(a),file=sys.stderr);sys.exit(2)\n"
+write script to the file at fake_gh
+expect truth it succeeded
+make executable fake_gh
+set tools to github tools using fake_gh and "git"
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n"
+expect truth (loaded's succeeded)
+set rules to loaded's conventions
+
+set naming to enforce the repository naming convention for "Example/BadName" named "BadName" using rules and tools, fixing false
+expect truth (naming's succeeded)
+expect truth (naming's violation)
+expect falsehood (naming's changed)
+expect naming's repository name to equal "BadName"
+
+set renamed to enforce the repository naming convention for "Example/AnotherName" named "AnotherName" using rules and tools, fixing true
+expect truth (renamed's succeeded)
+expect truth (renamed's violation)
+expect truth (renamed's changed)
+expect renamed's repository name to equal "another-name"
+
+set manual to enforce the repository naming convention for "Example/one-two-three-four" named "one-two-three-four" using rules and tools, fixing true
+expect truth (manual's succeeded)
+expect truth (manual's violation)
+expect falsehood (manual's changed)
+
+set readme to check the readme in "Example/demo" using tools
+expect truth (readme's succeeded)
+expect falsehood (readme's violation)
+
+set license to enforce the standard license "standard license" in "Example/demo" on "main" using tools, fixing true
+expect truth (license's succeeded)
+expect truth (license's violation)
+expect truth (license's changed)
+
+free conventions result loaded
+free github tools tools
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "repository checks: passed" as a line

@@ -1,0 +1,479 @@
+import lib/regex.dl
+import lib/text.dl
+import lib/yaml.dl
+
+function [the|] no case:
+    replacement:
+        0
+
+function [the|] snake case:
+    replacement:
+        1
+
+function [the|] kebab case:
+    replacement:
+        2
+
+function [the|] camel case:
+    replacement:
+        3
+
+function [the|] pascal case:
+    replacement:
+        4
+
+class:
+    patterns:
+        [the|] conventions
+    members:
+        document as a pointer to a YAML mapping node
+        snake pattern as string
+        kebab pattern as string
+        camel pattern as string
+        pascal pattern as string
+
+class:
+    patterns:
+        [a|the|] conventions result
+    members:
+        succeeded as boolean
+        conventions as a pointer to conventions
+        error message as string
+
+local function an empty conventions pointer:
+    replacement:
+        0 as a pointer to conventions
+
+local function a failed conventions result reporting {string:message}:
+    replacement:
+        @intrinsic("construct", a conventions result, false, an empty conventions pointer, message)
+
+function [the|] case named {string:name}:
+    execute:
+        if name = "snake_case":
+            return the snake case
+        if name = "kebab-case":
+            return the kebab case
+        if name = "camelCase":
+            return the camel case
+        if name = "PascalCase":
+            return the pascal case
+        return the no case
+
+function [the|] name of case {integer:style}:
+    execute:
+        if style = the snake case:
+            return the string form of "snake_case"
+        if style = the kebab case:
+            return the string form of "kebab-case"
+        if style = the camel case:
+            return the string form of "camelCase"
+        if style = the pascal case:
+            return the string form of "PascalCase"
+        return the string form of "undefined"
+
+local function require mapping {string:name} in {a pointer to a YAML mapping node:parent}:
+    execute:
+        if the inverse of (parent has YAML entry named name):
+            return 0 as a pointer to a YAML mapping node
+        set child to the YAML entry named name in parent
+        if the inverse of (child is a YAML mapping):
+            return 0 as a pointer to a YAML mapping node
+        return child
+
+local function optional pattern {string:name} in {a pointer to a YAML mapping node:cases} defaulting to {string:default_pattern}:
+    execute:
+        if the inverse of (cases has YAML entry named name):
+            return default_pattern
+        set case_node to the YAML entry named name in cases
+        if the inverse of (case_node is a YAML mapping):
+            return default_pattern
+        if the inverse of (case_node has YAML entry named "pattern"):
+            return default_pattern
+        set pattern_node to the YAML entry named "pattern" in case_node
+        if the inverse of (pattern_node is a YAML scalar):
+            return default_pattern
+        return the YAML scalar of pattern_node
+
+function load conventions from {string:source}:
+    execute:
+        parse source as a YAML mapping and set parsed to it
+        if parsed failed:
+            set message to the string form of "Invalid conventions YAML at line "
+            set message to message + the string form of parsed's error line
+            set message to message + the string form of ":"
+            set message to message + the string form of parsed's error column
+            set message to message + the string form of ": "
+            set message to message + parsed's error message
+            free parsed
+            return a failed conventions result reporting message
+
+        set document to parsed's document
+        set naming to require mapping "naming" in document
+        if naming = (0 as a pointer to a YAML mapping node):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must contain a naming mapping"
+
+        set repository to require mapping "repository" in naming
+        if repository = (0 as a pointer to a YAML mapping node):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must contain naming.repository"
+        if the inverse of (repository has YAML entry named "case"):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must define naming.repository.case"
+        set repository_case_node to the YAML entry named "case" in repository
+        if the inverse of (repository_case_node is a YAML scalar):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must define naming.repository.case as text"
+        if the case named the YAML scalar of repository_case_node = the no case:
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions define an unknown repository case"
+
+        set directory to require mapping "directory" in naming
+        if directory = (0 as a pointer to a YAML mapping node):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must contain naming.directory"
+        if the inverse of (directory has YAML entry named "case"):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must define naming.directory.case"
+        set directory_case_node to the YAML entry named "case" in directory
+        if the inverse of (directory_case_node is a YAML scalar):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions must define naming.directory.case as text"
+        if the case named the YAML scalar of directory_case_node = the no case:
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions define an unknown directory case"
+
+        if naming has YAML entry named "language":
+            set languages to the YAML entry named "language" in naming
+            if the inverse of (languages is a YAML mapping):
+                free parsed
+                return a failed conventions result reporting the string form of "Conventions must define naming.language as a mapping"
+            set language_position to 0
+            loop while language_position < the number of YAML entries in languages:
+                set language_node to the YAML entry at index language_position in languages
+                set language_name to the YAML key of language_node
+                if the inverse of (language_node is a YAML mapping):
+                    set message to (the string form of "Conventions must define naming.language.") + language_name
+                    set message to message + the string form of " as a mapping"
+                    free parsed
+                    return a failed conventions result reporting message
+                set category_position to 0
+                loop while category_position < the number of YAML entries in language_node:
+                    set category_node to the YAML entry at index category_position in language_node
+                    set category_name to the YAML key of category_node
+                    if the inverse of (category_node is a YAML scalar):
+                        set message to (the string form of "Conventions must define ") + language_name
+                        set message to message + the string form of "."
+                        set message to message + category_name
+                        set message to message + the string form of " as text"
+                        free parsed
+                        return a failed conventions result reporting message
+                    if the case named the YAML scalar of category_node = the no case:
+                        set message to (the string form of "Conventions define an unknown case for ") + language_name
+                        set message to message + the string form of "."
+                        set message to message + category_name
+                        free parsed
+                        return a failed conventions result reporting message
+                    set category_position to category_position + 1
+                set language_position to language_position + 1
+
+        set cases to require mapping "case" in naming
+        if naming has YAML entry named "case":
+            if cases = (0 as a pointer to a YAML mapping node):
+                free parsed
+                return a failed conventions result reporting the string form of "Conventions must define naming.case as a mapping"
+            set case_position to 0
+            loop while case_position < the number of YAML entries in cases:
+                set case_node to the YAML entry at index case_position in cases
+                set case_name to the YAML key of case_node
+                set known_case to case_name = "snake_case"
+                set known_case to known_case or case_name = "kebab-case"
+                set known_case to known_case or case_name = "camelCase"
+                set known_case to known_case or case_name = "PascalCase"
+                if known_case:
+                    if the inverse of (case_node is a YAML mapping):
+                        set message to (the string form of "Conventions must define naming.case.") + case_name
+                        set message to message + the string form of " as a mapping"
+                        free parsed
+                        return a failed conventions result reporting message
+                    if the inverse of (case_node has YAML entry named "pattern"):
+                        set message to (the string form of "Conventions must define naming.case.") + case_name
+                        set message to message + the string form of ".pattern"
+                        free parsed
+                        return a failed conventions result reporting message
+                    set pattern_node to the YAML entry named "pattern" in case_node
+                    if the inverse of (pattern_node is a YAML scalar):
+                        set message to (the string form of "Conventions must define naming.case.") + case_name
+                        set message to message + the string form of ".pattern as text"
+                        free parsed
+                        return a failed conventions result reporting message
+                set case_position to case_position + 1
+        set snake_pattern to the string form of "^[a-z][a-z0-9_]*$"
+        set kebab_pattern to the string form of "^[a-z][a-z0-9-]*$"
+        set camel_pattern to the string form of "^[a-z][a-zA-Z0-9]*$"
+        set pascal_pattern to the string form of "^[A-Z][a-zA-Z0-9]*$"
+        if cases != (0 as a pointer to a YAML mapping node):
+            set snake_pattern to optional pattern "snake_case" in cases defaulting to snake_pattern
+            set kebab_pattern to optional pattern "kebab-case" in cases defaulting to kebab_pattern
+            set camel_pattern to optional pattern "camelCase" in cases defaulting to camel_pattern
+            set pascal_pattern to optional pattern "PascalCase" in cases defaulting to pascal_pattern
+
+        compile snake_pattern as a regular expression and set snake_expression to it
+        compile kebab_pattern as a regular expression and set kebab_expression to it
+        compile camel_pattern as a regular expression and set camel_expression to it
+        compile pascal_pattern as a regular expression and set pascal_expression to it
+        if (snake_expression is invalid) or ((kebab_expression is invalid) or ((camel_expression is invalid) or (pascal_expression is invalid))):
+            free parsed
+            return a failed conventions result reporting the string form of "Conventions contain an invalid case pattern"
+
+        set value to @intrinsic(
+            "construct",
+            the conventions,
+            document,
+            snake_pattern,
+            kebab_pattern,
+            camel_pattern,
+            pascal_pattern
+        )
+        allocate one slot of value and set rules to it
+        return @intrinsic("construct", a conventions result, true, rules, the string form of "")
+
+local function naming mapping in {a pointer to conventions:rules}:
+    replacement:
+        the YAML entry named "naming" in rules's document
+
+local function configured case in {a pointer to a YAML mapping node:parent}:
+    execute:
+        if the inverse of (parent has YAML entry named "case"):
+            return the no case
+        set node to the YAML entry named "case" in parent
+        if the inverse of (node is a YAML scalar):
+            return the no case
+        return case named the YAML scalar of node
+
+function [the|] repository case in {a pointer to conventions:rules}:
+    execute:
+        set naming to naming mapping in rules
+        return configured case in the YAML entry named "repository" in naming
+
+function [the|] directory case in {a pointer to conventions:rules}:
+    execute:
+        set naming to naming mapping in rules
+        return configured case in the YAML entry named "directory" in naming
+
+function [the|] case for {string:language} {string:category} in {a pointer to conventions:rules}:
+    execute:
+        set naming to naming mapping in rules
+        if the inverse of (naming has YAML entry named "language"):
+            return the no case
+        set languages to the YAML entry named "language" in naming
+        if the inverse of (languages is a YAML mapping):
+            return the no case
+        if the inverse of (languages has YAML entry named language):
+            return the no case
+        set language_rules to the YAML entry named language in languages
+        if the inverse of (language_rules is a YAML mapping):
+            return the no case
+        if the inverse of (language_rules has YAML entry named category):
+            return the no case
+        set category_node to the YAML entry named category in language_rules
+        if the inverse of (category_node is a YAML scalar):
+            return the no case
+        return case named the YAML scalar of category_node
+
+local function [the|] pattern for case {integer:style} in {a pointer to conventions:rules}:
+    execute:
+        if style = the snake case:
+            return rules's snake pattern
+        if style = the kebab case:
+            return rules's kebab pattern
+        if style = the camel case:
+            return rules's camel pattern
+        if style = the pascal case:
+            return rules's pascal pattern
+        return the string form of ""
+
+function {string:name} follows {integer:style} in {a pointer to conventions:rules}:
+    execute:
+        set pattern to the pattern for case style in rules
+        if the length of pattern = 0:
+            return false
+        return name contains a match for the regular expression described by pattern
+
+function {string:name} follows {integer:style}:
+    execute:
+        set pattern to the string form of ""
+        if style = the snake case:
+            set pattern to the string form of "^[a-z][a-z0-9_]*$"
+        if style = the kebab case:
+            set pattern to the string form of "^[a-z][a-z0-9-]*$"
+        if style = the camel case:
+            set pattern to the string form of "^[a-z][a-zA-Z0-9]*$"
+        if style = the pascal case:
+            set pattern to the string form of "^[A-Z][a-zA-Z0-9]*$"
+        if the length of pattern = 0:
+            return false
+        return name contains a match for the regular expression described by pattern
+
+local function character {integer:value} is an ascii lowercase letter:
+    replacement:
+        value >= 97 and value <= 122
+
+local function character {integer:value} is an ascii uppercase letter:
+    replacement:
+        value >= 65 and value <= 90
+
+local function character {integer:value} is an ascii letter:
+    replacement:
+        character value is an ascii lowercase letter or character value is an ascii uppercase letter
+
+local function character {integer:value} is an ascii digit:
+    replacement:
+        value >= 48 and value <= 57
+
+local function word boundary before {integer:position} in {string:name}:
+    execute:
+        if position <= 0 or position >= the length of name:
+            return false
+        set current to the character at position in name as a 32 bit integer
+        if the inverse of (character current is an ascii uppercase letter):
+            return false
+        set previous to the character at position - 1 in name as a 32 bit integer
+        if character previous is an ascii lowercase letter or character previous is an ascii digit:
+            return true
+        if character previous is an ascii uppercase letter and position + 1 < the length of name:
+            set next to the character at position + 1 in name as a 32 bit integer
+            return character next is an ascii lowercase letter
+        return false
+
+local function normalized words from {string:name}:
+    execute:
+        set buffer to a new string buffer containing (the length of name * 2) bytes
+        set read_position to 0
+        set write_position to 0
+        set has_letter to false
+        set previous_was_boundary to true
+        loop while read_position < the length of name:
+            set character_value to the character at read_position in name
+            set character_code to character_value as a 32 bit integer
+            set separator to the inverse of (character character_code is an ascii letter or character character_code is an ascii digit)
+            if separator:
+                if the inverse of previous_was_boundary and write_position > 0:
+                    store 124 as a byte into the data of buffer at write_position
+                    set write_position to write_position + 1
+                set previous_was_boundary to true
+            else:
+                if word boundary before read_position in name:
+                    if the inverse of previous_was_boundary and write_position > 0:
+                        store 124 as a byte into the data of buffer at write_position
+                        set write_position to write_position + 1
+                if character character_value is an ascii letter:
+                    set has_letter to true
+                store the lowercase ASCII character corresponding to character_value into the data of buffer at write_position
+                set write_position to write_position + 1
+                set previous_was_boundary to false
+            set read_position to read_position + 1
+        if the inverse of has_letter:
+            return the substring of buffer from 0 spanning 0 bytes
+        if write_position > 0 and the character at write_position - 1 in buffer as a 32 bit integer = 124:
+            set write_position to write_position - 1
+        return the substring of buffer from 0 spanning write_position bytes
+
+function [the|] words in {string:name}:
+    replacement:
+        normalized words from name
+
+function [the|] number of words in {string:name}:
+    execute:
+        set normalized to normalized words from name
+        if the length of normalized = 0:
+            return 0
+        set count to 1
+        set position to 0
+        loop while position < the length of normalized:
+            if the character at position in normalized as a 32 bit integer = 124:
+                set count to count + 1
+            set position to position + 1
+        return count
+
+local function abbreviate {string:normalized} when it has more than three words:
+    execute:
+        set count to 1
+        set position to 0
+        loop while position < the length of normalized:
+            if the character at position in normalized as a 32 bit integer = 124:
+                set count to count + 1
+            set position to position + 1
+        if count <= 3:
+            return normalized
+        set result to a new string buffer containing count bytes
+        set read_position to 0
+        set write_position to 0
+        set at_word_start to true
+        loop while read_position < the length of normalized:
+            set character to the character at read_position in normalized
+            if character as a 32 bit integer = 124:
+                set at_word_start to true
+            else if at_word_start:
+                store character into the data of result at write_position
+                set write_position to write_position + 1
+                set at_word_start to false
+            set read_position to read_position + 1
+        return result
+
+function convert {string:name} to {integer:style}:
+    execute:
+        set normalized to normalized words from name
+        set normalized to abbreviate normalized when it has more than three words
+        if style = the snake case or style = the kebab case:
+            set separator to 95 as a byte
+            if style = the kebab case:
+                set separator to 45 as a byte
+            set result to a new string buffer containing (the length of normalized) bytes
+            set position to 0
+            loop while position < the length of normalized:
+                set value to the character at position in normalized
+                if value as a 32 bit integer = 124:
+                    set value to separator
+                store value into the data of result at position
+                set position to position + 1
+            return result
+
+        if style != the camel case and style != the pascal case:
+            @intrinsic("call", "libc", "abort", nothing)
+
+        set separator_count to 0
+        set position to 0
+        loop while position < the length of normalized:
+            if the character at position in normalized as a 32 bit integer = 124:
+                set separator_count to separator_count + 1
+            set position to position + 1
+
+        set result to a new string buffer containing (the length of normalized - separator_count) bytes
+        set read_position to 0
+        set write_position to 0
+        set capitalize_next to style = the pascal case
+        loop while read_position < the length of normalized:
+            set value to the character at read_position in normalized
+            if value as a 32 bit integer = 124:
+                set capitalize_next to true
+            else:
+                if capitalize_next:
+                    set value to the uppercase ASCII character corresponding to value
+                    set capitalize_next to false
+                store value into the data of result at write_position
+                set write_position to write_position + 1
+            set read_position to read_position + 1
+        return result
+
+function free conventions {a pointer to conventions:rules}:
+    execute:
+        free rules's document
+        @intrinsic("destroy at", rules)
+        @intrinsic("call", "libc", "free", nothing, rules)
+
+function free conventions result {conventions result:outcome}:
+    execute:
+        if outcome's conventions != (0 as a pointer to conventions):
+            free conventions outcome's conventions

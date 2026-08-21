@@ -1,0 +1,31 @@
+import lib/std.dl
+
+function expect {string:actual} to equal {string:expected}:
+    execute:
+        if actual != expected:
+            print "expected: "
+            print expected as a line
+            print "actual:   "
+            print actual as a line
+            @intrinsic("call", "libc", "abort", nothing)
+
+function expect {integer:actual} to equal {integer:expected}:
+    execute:
+        if actual != expected:
+            print "expected: "
+            print expected as a line
+            print "actual:   "
+            print actual as a line
+            @intrinsic("call", "libc", "abort", nothing)
+
+function expect truth {boolean:value}:
+    execute:
+        if the inverse of value:
+            print "expected truth" as a line
+            @intrinsic("call", "libc", "abort", nothing)
+
+function expect falsehood {boolean:value}:
+    execute:
+        if value:
+            print "expected falsehood" as a line
+            @intrinsic("call", "libc", "abort", nothing)

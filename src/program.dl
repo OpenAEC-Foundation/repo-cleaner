@@ -1,0 +1,164 @@
+import manager.dl
+import convention_source.dl
+import lib/filesystem.dl
+
+local class:
+    patterns:
+        [a|the|] tool preflight result
+    members:
+        succeeded as boolean
+        error message as string
+
+local function a failed tool preflight reporting {string:message}:
+    replacement:
+        @intrinsic("construct", a tool preflight result, false, message)
+
+local function verify executable {string:executable} for {string:purpose}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "--version" to arguments
+        set checked to run tool executable with arguments
+        free arguments
+        if the inverse of checked's succeeded:
+            set message to (the string form of "The ") + purpose
+            set message to message + the string form of " executable is unavailable: "
+            set message to message + executable
+            set message to message + the string form of ": "
+            set message to message + checked's error message
+            return a failed tool preflight reporting message
+        return @intrinsic(
+            "construct",
+            a tool preflight result,
+            true,
+            the string form of ""
+        )
+
+local function verify code convention tools in {a pointer to list:backends} using {a pointer to github tools:tools}:
+    execute:
+        set checked to verify executable tools's Git executable for "Git"
+        if the inverse of checked's succeeded:
+            return checked
+        set checked to verify executable "clang-format" for "C++ formatter"
+        if the inverse of checked's succeeded:
+            return checked
+        set position to 0
+        loop while position < the length of backends:
+            set backend to @intrinsic("cast", the item at position in backends, a pointer to language backend)
+            set purpose to backend's language + the string form of " language server"
+            set checked to verify executable backend's executable for purpose
+            if the inverse of checked's succeeded:
+                return checked
+            set position to position + 1
+        return @intrinsic(
+            "construct",
+            a tool preflight result,
+            true,
+            the string form of ""
+        )
+
+local function {a pointer to command line options:options} requests repository work:
+    execute:
+        set requested to options's check licenses or options's fix licenses
+        set requested to requested or options's check repository naming
+        set requested to requested or options's fix repository naming
+        set requested to requested or options's check code conventions
+        set requested to requested or options's fix code conventions
+        set requested to requested or options's check readme
+        return requested
+
+local function print lines in {a pointer to list:lines}:
+    execute:
+        set position to 0
+        loop while position < the length of lines:
+            print the item at position in lines as a line
+            set position to position + 1
+
+function run the convention enforcer with {a pointer to list:arguments} using {a pointer to github tools:tools} and {a pointer to list:backends}, with the standard license at {string:license_path}:
+    execute:
+        set command_line to understand command line arguments
+        if the inverse of command_line's succeeded:
+            print command_line's error message as a line
+            print the convention enforcer help
+            free command line result command_line
+            return 1
+        set options to command_line's options
+        if options's show help:
+            print the convention enforcer help
+            free command line result command_line
+            return 0
+        set converts_string to the length of options's string case > 0
+        if the inverse of converts_string and the inverse of (options requests repository work):
+            print "No action was specified." as a line
+            print the convention enforcer help
+            free command line result command_line
+            return 1
+
+        set manages_code to options's check code conventions or options's fix code conventions
+        if manages_code:
+            set preflight to verify code convention tools in backends using tools
+            if the inverse of preflight's succeeded:
+                print preflight's error message as a line
+                free command line result command_line
+                return 1
+
+        set authenticated to verify github authentication using tools
+        if the inverse of authenticated's succeeded:
+            print authenticated's error message as a line
+            free command line result command_line
+            return 1
+        set source to load the convention source using tools
+        if the inverse of source's succeeded:
+            print source's error message as a line
+            free command line result command_line
+            return 1
+        set loaded to load conventions from source's contents
+        if the inverse of loaded's succeeded:
+            print loaded's error message as a line
+            free conventions result loaded
+            free command line result command_line
+            return 1
+
+        if converts_string:
+            set style to the case named options's string case
+            if style = the no case:
+                set message to (the string form of "Unknown case: ") + options's string case
+                print message as a line
+                free conventions result loaded
+                free command line result command_line
+                return 1
+            if the number of words in options's string value = 0:
+                print "The value must contain at least one letter." as a line
+                free conventions result loaded
+                free command line result command_line
+                return 1
+            print convert options's string value to style as a line
+            free conventions result loaded
+            free command line result command_line
+            return 0
+
+        set standard_license to the string form of ""
+        set manages_license to options's check licenses or options's fix licenses
+        if manages_license:
+            read the file at license_path and set license_read to it
+            if license_read failed:
+                print license_read's error message as a line
+                free conventions result loaded
+                free command line result command_line
+                return 1
+            set standard_license to license_read's contents
+
+        set managed to manage repositories requested by options using tools, loaded's conventions, backends, and license standard_license
+        print lines in managed's summaries
+        if the length of managed's errors > 0:
+            print "Errors:" as a line
+            print lines in managed's errors
+        set exit_code to 0
+        set failed_run to the inverse of managed's succeeded
+        set failed_run to failed_run or managed's violations
+        set failed_run to failed_run or managed's changed
+        if failed_run:
+            set exit_code to 1
+        free repository management result managed
+        free conventions result loaded
+        free command line result command_line
+        return exit_code

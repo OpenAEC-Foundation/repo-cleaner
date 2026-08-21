@@ -1,0 +1,520 @@
+import language_server_paths.dl
+import reporting.dl
+import commands.dl
+
+class:
+    patterns:
+        [a|the|] convention enforcement result
+    members:
+        succeeded as boolean
+        changed as boolean
+        report as a pointer to convention report
+        error message as string
+
+local class:
+    patterns:
+        [an|the|] active language session
+    members:
+        backend as a pointer to language backend
+        session as a pointer to language session
+
+local class:
+    patterns:
+        [a|the|] formatting result
+    members:
+        succeeded as boolean
+        changed as boolean
+        descriptions as a pointer to list
+        error message as string
+
+local function an empty language backend pointer:
+    replacement:
+        0 as a pointer to language backend
+
+local function an empty language session pointer:
+    replacement:
+        0 as a pointer to language session
+
+local function the configured language backend for {string:language} in {a pointer to list:backends}:
+    execute:
+        set position to 0
+        loop while position < the length of backends:
+            set configured_backend to @intrinsic("cast", the item at position in backends, a pointer to language backend)
+            if configured_backend's language = language:
+                return configured_backend
+            set position to position + 1
+        return an empty language backend pointer
+
+local function an allocated active session using {a pointer to language backend:backend} and {a pointer to language session:session}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            an active language session,
+            backend,
+            session
+        )
+        allocate one slot of value and set allocated_session to it
+        return allocated_session
+
+local function finish {a pointer to list:sessions} recording failures in {a pointer to list:failures}:
+    execute:
+        set position to 0
+        loop while position < the length of sessions:
+            set active to the item at position in sessions
+            set active_session to active's session
+            set active_backend to active's backend
+            if active_session != (an empty language session pointer):
+                set finished to finish language session active_session
+                if the inverse of finished's succeeded:
+                    set failure to (the string form of "Stopping ") + active_backend's language
+                    set failure to failure + the string form of " language server failed: "
+                    set failure to failure + finished's error message
+                    append failure to failures
+            @intrinsic("destroy at", active)
+            @intrinsic("call", "libc", "free", nothing, active)
+            set position to position + 1
+        free sessions
+
+local function a failed language operation changed {boolean:changed} reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a language operation result,
+            false,
+            changed,
+            the string form of "",
+            message
+        )
+
+local function a successful language operation changed {boolean:changed} described by {string:description}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a language operation result,
+            true,
+            changed,
+            description,
+            the string form of ""
+        )
+
+local function the path rename {literal:description} for {rename candidate:candidate}:
+    execute:
+        set description to candidate's source relative path + the string form of " -> "
+        return description + candidate's target relative path
+
+local function {a pointer to list:sessions} support path rename preparation:
+    execute:
+        set position to 0
+        loop while position < the length of sessions:
+            set active to the item at position in sessions
+            if the inverse of (active's session supports path rename preparation):
+                return false
+            set position to position + 1
+        return true
+
+local function synchronize {a pointer to active language session:active} after {rename candidate:candidate}:
+    execute:
+        set active_session to active's session
+        if active_session accepts path rename notifications:
+            return announce path rename candidate through active_session
+
+        set root to the string form of active_session's root
+        set stopped to finish language session active_session
+        set active's session to an empty language session pointer
+        set restarted to begin language session using active's backend in root
+        if restarted's succeeded:
+            set active's session to restarted's session
+        if the inverse of stopped's succeeded:
+            set message to the string form of "Restarting " + active's backend's language
+            set message to message + the string form of " language server failed while stopping it: "
+            set message to message + stopped's error message
+            if the inverse of restarted's succeeded:
+                set message to message + the string form of "; starting its replacement failed: "
+                set message to message + restarted's error message
+            return a failed language operation changed true reporting message
+        if the inverse of restarted's succeeded:
+            set message to the string form of "Restarting " + active's backend's language
+            set message to message + the string form of " language server failed: "
+            set message to message + restarted's error message
+            return a failed language operation changed true reporting message
+        return a successful language operation changed false described by the string form of ""
+
+local function rename path {rename candidate:candidate} through {a pointer to list:sessions}:
+    execute:
+        if candidate's source path = candidate's target path:
+            return a failed language operation changed false reporting the string form of "A path violates its convention but has no distinct replacement"
+        set target to the file system entry at candidate's target path
+        if target lookup failed:
+            return a failed language operation changed false reporting target's error message
+        if target was found:
+            return a failed language operation changed false reporting (the string form of "Rename target already exists: ") + candidate's target relative path
+
+        if the inverse of (sessions support path rename preparation):
+            @intrinsic("call", "libc", "abort", nothing)
+
+        set first_active to the item at 0 in sessions
+        set workspace_root to first_active's session's root
+        set preparations to an empty list of a pointer to path rename preparation
+        set position to 0
+        loop while position < the length of sessions:
+            set active to the item at position in sessions
+            set active_session to active's session
+            set prepared to prepare references for path rename candidate through active_session
+            append prepared to preparations
+            if the inverse of prepared's succeeded:
+                set message to prepared's error message
+                free path rename preparations preparations
+                return a failed language operation changed false reporting message
+            set position to position + 1
+
+        set applied to apply path rename edits from preparations rooted at workspace_root
+        free path rename preparations preparations
+        if the inverse of applied's succeeded:
+            return applied
+        set changed to applied's changed
+
+        rename the filesystem entry at candidate's source path to candidate's target path
+        set renamed to it
+        if renamed failed:
+            return a failed language operation changed changed reporting renamed's error message
+        set changed to true
+
+        set position to 0
+        set synchronized to true
+        set synchronization_error to the string form of ""
+        loop while position < the length of sessions:
+            set active to the item at position in sessions
+            set session_result to synchronize active after candidate
+            if the inverse of session_result's succeeded and synchronized:
+                set synchronized to false
+                set synchronization_error to session_result's error message
+            set position to position + 1
+        if the inverse of synchronized:
+            return a failed language operation changed true reporting synchronization_error
+
+        return a successful language operation changed true described by the path rename description for candidate
+
+local function rename path {rename candidate:candidate} through the session for its language in {a pointer to list:sessions}:
+    execute:
+        set position to 0
+        loop while position < the length of sessions:
+            set active to the item at position in sessions
+            set active_backend to active's backend
+            if active_backend's language = candidate's language:
+                set selected to a list containing active
+                set result to rename path candidate through selected
+                free selected
+                return result
+            set position to position + 1
+        return a failed language operation changed false reporting (the string form of "No language backend is active for ") + candidate's language
+
+local function record mutation {string:description} as a fix if {boolean:fixing} in {a pointer to list:fixes} or {a pointer to list:remaining}:
+    execute:
+        if fixing:
+            append description to fixes
+        else:
+            append description to remaining
+
+local function format C plus plus sources in {a pointer to repository tree:tree}:
+    execute:
+        set descriptions to an empty list of string
+        set changed to false
+        set entries to tree's entries
+        set position to 0
+        loop while position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if the inverse of entry's directory and entry's language = "cpp":
+                read the file at entry's absolute path and set before to it
+                if before failed:
+                    return @intrinsic(
+                        "construct",
+                        a formatting result,
+                        false,
+                        changed,
+                        descriptions,
+                        before's error message
+                    )
+                set arguments to an empty list of string
+                append the string form of "-i" to arguments
+                append entry's absolute path to arguments
+                set formatted to run tool "clang-format" with arguments in tree's root
+                free arguments
+                if the inverse of formatted's succeeded:
+                    return @intrinsic(
+                        "construct",
+                        a formatting result,
+                        false,
+                        changed,
+                        descriptions,
+                        formatted's error message
+                    )
+                read the file at entry's absolute path and set after to it
+                if after failed:
+                    return @intrinsic(
+                        "construct",
+                        a formatting result,
+                        false,
+                        changed,
+                        descriptions,
+                        after's error message
+                    )
+                if before's contents != after's contents:
+                    set changed to true
+                    append (the string form of "Formatted ") + entry's relative path to descriptions
+            set position to position + 1
+        return @intrinsic(
+            "construct",
+            a formatting result,
+            true,
+            changed,
+            descriptions,
+            the string form of ""
+        )
+
+local function build enforcement result for {string:repository_name} succeeded {boolean:succeeded}, changed {boolean:changed}, with {a pointer to list:phases}, {a pointer to list:languages}, {a pointer to list:fixes}, {a pointer to list:remaining}, {a pointer to list:failures}, and error {string:error}:
+    execute:
+        set pull_request_state to the string form of "none"
+        set report to a convention report for repository_name with phases phases, languages languages, fixes fixes, remaining violations remaining, failures failures, and pull request state pull_request_state
+        return @intrinsic(
+            "construct",
+            a convention enforcement result,
+            succeeded,
+            changed,
+            report,
+            error
+        )
+
+function enforce conventions in working copy {string:root} for repository {string:repository_name} using {a pointer to conventions:rules} and {a pointer to list:backends}, applying fixes {boolean:fixing}:
+    execute:
+        set phases to an empty list of string
+        append the string form of "directories" to phases
+        append the string form of "files" to phases
+        append the string form of "symbols" to phases
+        append the string form of "large files" to phases
+        set recorded_fixes to an empty list of string
+        set remaining to an empty list of string
+        set failures to an empty list of string
+        set changed to false
+        set healthy to true
+        set error to the string form of ""
+
+        set scanned to scan repository tree at root
+        if the inverse of scanned's succeeded:
+            append scanned's error message to failures
+            set languages to an empty list of string
+            return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error scanned's error message
+        set tree to scanned's tree
+        set languages to the detected language names in tree
+
+        if the length of languages = 0:
+            set size_check to check for source files larger than 1000 lines in tree
+            set position to 0
+            loop while position < the length of size_check's violations:
+                append the item at position in size_check's violations to remaining
+                set position to position + 1
+            set position to 0
+            loop while position < the length of size_check's failures:
+                append the item at position in size_check's failures to failures
+                set position to position + 1
+            if the inverse of size_check's succeeded:
+                set healthy to false
+                set error to the item at 0 in size_check's failures
+            free source file size result size_check
+            free repository tree result scanned
+            return build enforcement result for repository_name succeeded healthy, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
+
+        set language to the item at 0 in languages
+        set selected_backend to the configured language backend for language in backends
+        if selected_backend = (an empty language backend pointer):
+            set error to (the string form of "No language backend is configured for ") + language
+            append error to failures
+            free repository tree result scanned
+            return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
+        set begun to begin language session using selected_backend in root
+        if the inverse of begun's succeeded:
+            set error to (the string form of "Starting ") + language
+            set error to error + the string form of " language server failed: "
+            set error to error + begun's error message
+            append error to failures
+            free repository tree result scanned
+            return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
+        set sessions to a list containing (an allocated active session using selected_backend and (begun's session))
+
+        set position to 1
+        loop while healthy and position < the length of languages:
+            set language to the item at position in languages
+            set selected_backend to the configured language backend for language in backends
+            if selected_backend = (an empty language backend pointer):
+                set error to (the string form of "No language backend is configured for ") + language
+                append error to failures
+                set healthy to false
+            else:
+                set begun to begin language session using selected_backend in root
+                if the inverse of begun's succeeded:
+                    set error to (the string form of "Starting ") + language
+                    set error to error + the string form of " language server failed: "
+                    set error to error + begun's error message
+                    append error to failures
+                    set healthy to false
+                else:
+                    append (an allocated active session using selected_backend and (begun's session)) to sessions
+            set position to position + 1
+
+        if the inverse of healthy:
+            finish sessions recording failures in failures
+            free repository tree result scanned
+            return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
+
+        set searching to healthy
+        loop while searching:
+            set candidate to the next directory rename in tree using rules
+            if the inverse of candidate's found:
+                set searching to false
+            else:
+                if the inverse of (sessions support path rename preparation):
+                    append the path rename description for candidate to remaining
+                    set searching to false
+                else:
+                    set renamed to rename path candidate through sessions
+                    set changed to changed or renamed's changed
+                    if the inverse of renamed's succeeded:
+                        set error to renamed's error message
+                        append error to failures
+                        set healthy to false
+                        set searching to false
+                    else:
+                        record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
+                        free repository tree result scanned
+                        set scanned to scan repository tree at root
+                        if the inverse of scanned's succeeded:
+                            set error to scanned's error message
+                            append error to failures
+                            set healthy to false
+                            set searching to false
+                        else:
+                            set tree to scanned's tree
+
+        set session_position to 0
+        loop while healthy and session_position < the length of sessions:
+            set active to the item at session_position in sessions
+            set active_backend to active's backend
+            set searching to true
+            loop while healthy and searching:
+                set candidate to the next file rename for active_backend's language in tree using rules
+                if the inverse of candidate's found:
+                    set searching to false
+                else:
+                    if the inverse of (active's session supports path rename preparation):
+                        append the path rename description for candidate to remaining
+                        set searching to false
+                    else:
+                        set renamed to rename path candidate through the session for its language in sessions
+                        set changed to changed or renamed's changed
+                        if the inverse of renamed's succeeded:
+                            set error to renamed's error message
+                            append error to failures
+                            set healthy to false
+                            set searching to false
+                        else:
+                            record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
+                            free repository tree result scanned
+                            set scanned to scan repository tree at root
+                            if the inverse of scanned's succeeded:
+                                set error to scanned's error message
+                                append error to failures
+                                set healthy to false
+                                set searching to false
+                            else:
+                                set tree to scanned's tree
+            set session_position to session_position + 1
+
+        set categories to an empty list of string
+        append the string form of "namespace" to categories
+        append the string form of "class" to categories
+        append the string form of "function" to categories
+        append the string form of "variable" to categories
+        append the string form of "constant" to categories
+        append the string form of "enum" to categories
+        set session_position to 0
+        loop while healthy and session_position < the length of sessions:
+            set active to the item at session_position in sessions
+            set active_session to active's session
+            set category_position to 0
+            loop while healthy and category_position < the length of categories:
+                set category to the item at category_position in categories
+                set searching to true
+                loop while healthy and searching:
+                    set found to find next category violation through active_session in tree with rules
+                    if the inverse of found's succeeded:
+                        set error to found's error message
+                        append error to failures
+                        set healthy to false
+                        set searching to false
+                    else if the inverse of found's candidate's found:
+                        set searching to false
+                    else:
+                        set renamed to apply symbol rename found's candidate through active_session
+                        set changed to changed or renamed's changed
+                        if the inverse of renamed's succeeded:
+                            set error to renamed's error message
+                            append error to failures
+                            set healthy to false
+                            set searching to false
+                        else:
+                            record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
+                set category_position to category_position + 1
+            set session_position to session_position + 1
+        free categories
+
+        finish sessions recording failures in failures
+        if the length of failures > 0:
+            set healthy to false
+            if the length of error = 0:
+                set error to the item at 0 in failures
+
+        if healthy:
+            if tree includes language "cpp":
+                set formatted to format C plus plus sources in tree
+                set changed to changed or formatted's changed
+                set position to 0
+                loop while position < the length of formatted's descriptions:
+                    record mutation the item at position in formatted's descriptions as a fix if fixing in recorded_fixes or remaining
+                    set position to position + 1
+                free formatted's descriptions
+                if the inverse of formatted's succeeded:
+                    set error to formatted's error message
+                    append error to failures
+                    set healthy to false
+
+        if healthy:
+            free repository tree result scanned
+            set scanned to scan repository tree at root
+            if the inverse of scanned's succeeded:
+                set error to scanned's error message
+                append error to failures
+                set healthy to false
+            else:
+                set tree to scanned's tree
+
+        if healthy:
+            set size_check to check for source files larger than 1000 lines in tree
+            set position to 0
+            loop while position < the length of size_check's violations:
+                append the item at position in size_check's violations to remaining
+                set position to position + 1
+            set position to 0
+            loop while position < the length of size_check's failures:
+                append the item at position in size_check's failures to failures
+                set position to position + 1
+            if the inverse of size_check's succeeded:
+                set healthy to false
+                set error to the item at 0 in size_check's failures
+            free source file size result size_check
+
+        free repository tree result scanned
+        set publishable_change to fixing and changed
+        return build enforcement result for repository_name succeeded healthy, changed publishable_change, with phases, languages, recorded_fixes, remaining, failures, and error error
+
+function free convention enforcement result {convention enforcement result:outcome}:
+    execute:
+        free convention report outcome's report

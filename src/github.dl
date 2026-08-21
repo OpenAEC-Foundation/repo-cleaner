@@ -1,0 +1,885 @@
+import commands.dl
+import base64.dl
+import lib/json.dl
+
+class:
+    patterns:
+        [the|] github tools
+    members:
+        GitHub executable as string
+        Git executable as string
+
+class:
+    patterns:
+        [a|the|] github repository
+    members:
+        name as string
+        default branch as string
+        empty as boolean
+
+class:
+    patterns:
+        [a|the|] github repository result
+    members:
+        succeeded as boolean
+        repository as a pointer to github repository
+        error message as string
+
+class:
+    patterns:
+        [a|the|] github repository list result
+    members:
+        succeeded as boolean
+        repositories as a pointer to list
+        error message as string
+
+class:
+    patterns:
+        [a|the|] github operation result
+    members:
+        succeeded as boolean
+        output as string
+        error message as string
+
+class:
+    patterns:
+        [a|the|] github pull request result
+    members:
+        succeeded as boolean
+        found as boolean
+        number as integer
+        url as string
+        error message as string
+
+class:
+    patterns:
+        [a|the|] github publication result
+    members:
+        succeeded as boolean
+        changed as boolean
+        error message as string
+
+class:
+    patterns:
+        [a|the|] github file result
+    members:
+        succeeded as boolean
+        found as boolean
+        contents as string
+        sha as string
+        error message as string
+
+class:
+    patterns:
+        [a|the|] github issue result
+    members:
+        succeeded as boolean
+        found as boolean
+        number as integer
+        state as string
+        pinned as boolean
+        error message as string
+
+function [the|] scanner branch name:
+    replacement:
+        the string form of "repo-cleaner/convention-fixes"
+
+function github tools using {string:gh_executable} and {string:git_executable}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            the github tools,
+            gh_executable,
+            git_executable
+        )
+        allocate one slot of value and set allocated_tools to it
+        return allocated_tools
+
+function [the|] default github tools:
+    replacement:
+        github tools using "gh" and "git"
+
+function free github tools {a pointer to github tools:tools}:
+    execute:
+        @intrinsic("destroy at", tools)
+        @intrinsic("call", "libc", "free", nothing, tools)
+
+local function a successful github operation with {string:output}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github operation result,
+            true,
+            output,
+            the string form of ""
+        )
+
+local function a failed github operation reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github operation result,
+            false,
+            the string form of "",
+            message
+        )
+
+local function github result from {tool result:completed}:
+    execute:
+        if completed's succeeded:
+            return a successful github operation with completed's standard output
+        return a failed github operation reporting completed's error message
+
+local function run github using {a pointer to github tools:tools} with {a pointer to list:arguments}:
+    replacement:
+        run tool tools's GitHub executable with arguments
+
+local function run github using {a pointer to github tools:tools} with {a pointer to list:arguments} and input {string:standard_input}:
+    replacement:
+        run tool tools's GitHub executable with arguments using standard_input
+
+local function run git using {a pointer to github tools:tools} with {a pointer to list:arguments} in {string:root}:
+    replacement:
+        run tool tools's Git executable with arguments in root
+
+local function an empty github repository pointer:
+    replacement:
+        0 as a pointer to github repository
+
+local function a failed github repository result reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github repository result,
+            false,
+            an empty github repository pointer,
+            message
+        )
+
+local function an allocated github repository named {string:name} with branch {string:branch} empty {boolean:empty}:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            a github repository,
+            name,
+            branch,
+            empty
+        )
+        allocate one slot of value and set allocated_repository to it
+        return allocated_repository
+
+local function github repository from {a pointer to a JSON value:node}:
+    execute:
+        if node is not a JSON object:
+            return a failed github repository result reporting the string form of "GitHub repository data must be an object"
+        if node lacks JSON member named "name" or node lacks JSON member named "defaultBranchRef":
+            return a failed github repository result reporting the string form of "GitHub repository data is incomplete"
+        set name_node to the JSON member named "name" in node
+        if the kind of name_node != the JSON text kind:
+            return a failed github repository result reporting the string form of "GitHub repository name must be text"
+        set name to the text of name_node
+        set branch_node to the JSON member named "defaultBranchRef" in node
+        if branch_node is JSON null:
+            set allocated_repository to an allocated github repository named name with branch the string form of "" empty true
+            return @intrinsic(
+                "construct",
+                a github repository result,
+                true,
+                allocated_repository,
+                the string form of ""
+            )
+        if branch_node is not a JSON object or branch_node lacks JSON member named "name":
+            return a failed github repository result reporting the string form of "GitHub default branch data is invalid"
+        set branch_name_node to the JSON member named "name" in branch_node
+        if the kind of branch_name_node != the JSON text kind:
+            return a failed github repository result reporting the string form of "GitHub default branch name must be text"
+        set allocated_repository to an allocated github repository named name with branch the text of branch_name_node empty false
+        return @intrinsic(
+            "construct",
+            a github repository result,
+            true,
+            allocated_repository,
+            the string form of ""
+        )
+
+function verify github authentication using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "auth" to arguments
+        append the string form of "status" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+function fetch {string:path} from github repository {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "api" to arguments
+        append (the string form of "repos/") + repository_name + the string form of "/contents/" + path to arguments
+        append the string form of "--header" to arguments
+        append the string form of "Accept: application/vnd.github.raw+json" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+local function a failed github file result reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github file result,
+            false,
+            false,
+            the string form of "",
+            the string form of "",
+            message
+        )
+
+local function a missing github file result:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github file result,
+            true,
+            false,
+            the string form of "",
+            the string form of "",
+            the string form of ""
+        )
+
+local function a new JSON text containing {string:value}:
+    execute:
+        set node to a new JSON value of kind the JSON text kind
+        set the text of node to value
+        return node
+
+function read github file {string:path} in {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "api" to arguments
+        append (the string form of "repos/") + repository_name + the string form of "/contents/" + path to arguments
+        append the string form of "--jq" to arguments
+        append the string form of "{content:.content,sha:.sha}" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        if the inverse of completed's succeeded:
+            if completed's standard error contains "(HTTP 404)":
+                return a missing github file result
+            return a failed github file result reporting completed's error message
+
+        parse completed's standard output as JSON and set parsed to it
+        if parsed failed:
+            free parsed
+            return a failed github file result reporting the string form of "GitHub file data is not valid JSON"
+        set root to the value of parsed
+        set incomplete to root is not a JSON object
+        if the inverse of incomplete:
+            set incomplete to root lacks JSON member named "content"
+            if the inverse of incomplete:
+                set incomplete to root lacks JSON member named "sha"
+        if incomplete:
+            free parsed
+            return a failed github file result reporting the string form of "GitHub file data is incomplete"
+        set content_node to the JSON member named "content" in root
+        set sha_node to the JSON member named "sha" in root
+        if the kind of content_node != the JSON text kind or the kind of sha_node != the JSON text kind:
+            free parsed
+            return a failed github file result reporting the string form of "GitHub file data is invalid"
+        set decoded to decode the base64 text the text of content_node
+        if the inverse of decoded's succeeded:
+            set message to decoded's error message
+            free parsed
+            return a failed github file result reporting message
+        set contents to decoded's value
+        set sha to the text of sha_node
+        free parsed
+        return @intrinsic(
+            "construct",
+            a github file result,
+            true,
+            true,
+            contents,
+            sha,
+            the string form of ""
+        )
+
+function write github file {string:path} in {string:repository_name} with contents {string:contents}, message {string:message}, branch {string:branch}, and existing sha {string:sha} using {a pointer to github tools:tools}:
+    execute:
+        set payload to a new JSON value of kind the JSON object kind
+        add a JSON member named "message" with value a new JSON text containing message to payload
+        add a JSON member named "content" with value a new JSON text containing the base64 encoding of contents to payload
+        add a JSON member named "branch" with value a new JSON text containing branch to payload
+        if the length of sha > 0:
+            add a JSON member named "sha" with value a new JSON text containing sha to payload
+        set body to the compact JSON form of payload
+        free payload
+
+        set arguments to an empty list of string
+        append the string form of "api" to arguments
+        append (the string form of "repos/") + repository_name + the string form of "/contents/" + path to arguments
+        append the string form of "--method" to arguments
+        append the string form of "PUT" to arguments
+        append the string form of "--input" to arguments
+        append the string form of "-" to arguments
+        append the string form of "--silent" to arguments
+        set completed to run github using tools with arguments and input body
+        free arguments
+        return github result from completed
+
+function list repositories in {string:organization} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "repo" to arguments
+        append the string form of "list" to arguments
+        append organization to arguments
+        append the string form of "--limit" to arguments
+        append the string form of "1000" to arguments
+        append the string form of "--json" to arguments
+        append the string form of "name,defaultBranchRef" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        if the inverse of completed's succeeded:
+            return @intrinsic(
+                "construct",
+                a github repository list result,
+                false,
+                an empty list of github repository,
+                completed's error message
+            )
+
+        parse completed's standard output as JSON and set parsed to it
+        if parsed failed:
+            free parsed
+            return @intrinsic(
+                "construct",
+                a github repository list result,
+                false,
+                an empty list of github repository,
+                the string form of "GitHub repository list is not valid JSON"
+            )
+        set root to the value of parsed
+        if root is not a JSON array:
+            free parsed
+            return @intrinsic(
+                "construct",
+                a github repository list result,
+                false,
+                an empty list of github repository,
+                the string form of "GitHub repository list must be an array"
+            )
+
+        set repository_values to an empty list of github repository
+        set position to 0
+        loop while position < the number of JSON items in root:
+            set decoded to github repository from the JSON value at index position in root
+            if the inverse of decoded's succeeded:
+                set message to decoded's error message
+                free github repository result decoded
+                free repository_values
+                free parsed
+                return @intrinsic(
+                    "construct",
+                    a github repository list result,
+                    false,
+                    an empty list of github repository,
+                    message
+                )
+            set decoded_repository to decoded's repository
+            set repository_value to @intrinsic(
+                "construct",
+                a github repository,
+                decoded_repository's name,
+                decoded_repository's default branch,
+                decoded_repository's empty
+            )
+            append repository_value to repository_values
+            free github repository result decoded
+            set position to position + 1
+        free parsed
+        return @intrinsic(
+            "construct",
+            a github repository list result,
+            true,
+            repository_values,
+            the string form of ""
+        )
+
+function inspect repository {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "repo" to arguments
+        append the string form of "view" to arguments
+        append repository_name to arguments
+        append the string form of "--json" to arguments
+        append the string form of "name,defaultBranchRef" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        if the inverse of completed's succeeded:
+            return a failed github repository result reporting completed's error message
+        parse completed's standard output as JSON and set parsed to it
+        if parsed failed:
+            free parsed
+            return a failed github repository result reporting the string form of "GitHub repository data is not valid JSON"
+        set decoded to github repository from the value of parsed
+        free parsed
+        return decoded
+
+function rename github repository {string:repository_name} to {string:new_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "api" to arguments
+        append (the string form of "repos/") + repository_name to arguments
+        append the string form of "--method" to arguments
+        append the string form of "PATCH" to arguments
+        append the string form of "--field" to arguments
+        append (the string form of "name=") + new_name to arguments
+        append the string form of "--silent" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+function prepare scanner checkout of {string:repository_name} at {string:destination} from {string:base_branch} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "repo" to arguments
+        append the string form of "clone" to arguments
+        append repository_name to arguments
+        append destination to arguments
+        set cloned to run github using tools with arguments
+        free arguments
+        if the inverse of cloned's succeeded:
+            return a failed github operation reporting cloned's error message
+
+        set arguments to an empty list of string
+        append the string form of "checkout" to arguments
+        append the string form of "-B" to arguments
+        append the scanner branch name to arguments
+        append (the string form of "origin/") + base_branch to arguments
+        set checked_out to run git using tools with arguments in destination
+        free arguments
+        return github result from checked_out
+
+local function a successful github publication changed {boolean:changed}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github publication result,
+            true,
+            changed,
+            the string form of ""
+        )
+
+local function a failed github publication reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github publication result,
+            false,
+            false,
+            message
+        )
+
+function publish scanner changes in {string:root} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "add" to arguments
+        append the string form of "-A" to arguments
+        set staged to run git using tools with arguments in root
+        free arguments
+        if the inverse of staged's succeeded:
+            return a failed github publication reporting staged's error message
+
+        set arguments to an empty list of string
+        append the string form of "diff" to arguments
+        append the string form of "--cached" to arguments
+        append the string form of "--quiet" to arguments
+        set difference to run git using tools with arguments in root
+        free arguments
+        if difference's succeeded:
+            return a successful github publication changed false
+        if the inverse of difference's launched or difference's exit code != (1 as a word sized integer):
+            return a failed github publication reporting difference's error message
+
+        set arguments to an empty list of string
+        append the string form of "-c" to arguments
+        append the string form of "user.name=OpenAEC Convention Enforcer" to arguments
+        append the string form of "-c" to arguments
+        append the string form of "user.email=41898282+github-actions[bot]@users.noreply.github.com" to arguments
+        append the string form of "commit" to arguments
+        append the string form of "-m" to arguments
+        append the string form of "Apply repository convention fixes" to arguments
+        set committed to run git using tools with arguments in root
+        free arguments
+        if the inverse of committed's succeeded:
+            return a failed github publication reporting committed's error message
+
+        set arguments to an empty list of string
+        append the string form of "push" to arguments
+        append the string form of "--force-with-lease" to arguments
+        append the string form of "origin" to arguments
+        append the scanner branch name to arguments
+        set pushed to run git using tools with arguments in root
+        free arguments
+        if the inverse of pushed's succeeded:
+            return a failed github publication reporting pushed's error message
+        return a successful github publication changed true
+
+local function a failed github issue result reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github issue result,
+            false,
+            false,
+            0,
+            the string form of "",
+            false,
+            message
+        )
+
+local function no github issue was found:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github issue result,
+            true,
+            false,
+            0,
+            the string form of "",
+            false,
+            the string form of ""
+        )
+
+function find issue titled {string:title} in {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "issue" to arguments
+        append the string form of "list" to arguments
+        append the string form of "-R" to arguments
+        append repository_name to arguments
+        append the string form of "--state" to arguments
+        append the string form of "all" to arguments
+        append the string form of "--search" to arguments
+        append (the string form of "\"") + title + the string form of "\" in:title" to arguments
+        append the string form of "--json" to arguments
+        append the string form of "number,title,state,isPinned" to arguments
+        append the string form of "--limit" to arguments
+        append the string form of "100" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        if the inverse of completed's succeeded:
+            return a failed github issue result reporting completed's error message
+
+        parse completed's standard output as JSON and set parsed to it
+        if parsed failed:
+            free parsed
+            return a failed github issue result reporting the string form of "GitHub issue list is not valid JSON"
+        set root to the value of parsed
+        if root is not a JSON array:
+            free parsed
+            return a failed github issue result reporting the string form of "GitHub issue list must be an array"
+        set position to 0
+        loop while position < the number of JSON items in root:
+            set node to the JSON value at index position in root
+            if node is not a JSON object:
+                free parsed
+                return a failed github issue result reporting the string form of "GitHub issue data must be an object"
+            set incomplete to node lacks JSON member named "number"
+            set incomplete to incomplete or node lacks JSON member named "title"
+            set incomplete to incomplete or node lacks JSON member named "state"
+            set incomplete to incomplete or node lacks JSON member named "isPinned"
+            if incomplete:
+                free parsed
+                return a failed github issue result reporting the string form of "GitHub issue data is incomplete"
+            set number_node to the JSON member named "number" in node
+            set title_node to the JSON member named "title" in node
+            set state_node to the JSON member named "state" in node
+            set pinned_node to the JSON member named "isPinned" in node
+            set invalid to the kind of number_node != the JSON number kind
+            set invalid to invalid or the kind of title_node != the JSON text kind
+            set invalid to invalid or the kind of state_node != the JSON text kind
+            set invalid to invalid or the kind of pinned_node != the JSON boolean kind
+            if invalid:
+                free parsed
+                return a failed github issue result reporting the string form of "GitHub issue data is invalid"
+            if the text of title_node = title:
+                set number_value to the number of number_node
+                if number_value < 1.0 or number_value > 2147483647.0:
+                    free parsed
+                    return a failed github issue result reporting the string form of "GitHub issue number is invalid"
+                set number to number_value as an integer
+                set state to the text of state_node
+                set pinned to the boolean of pinned_node
+                free parsed
+                return @intrinsic(
+                    "construct",
+                    a github issue result,
+                    true,
+                    true,
+                    number,
+                    state,
+                    pinned,
+                    the string form of ""
+                )
+            set position to position + 1
+        free parsed
+        return no github issue was found
+
+local function run issue command {string:verb} for {integer:number} in {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "issue" to arguments
+        append verb to arguments
+        append the string form of number to arguments
+        append the string form of "-R" to arguments
+        append repository_name to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+local function the issue number in {string:url}:
+    execute:
+        set end to the length of url
+        loop while end > 0 and ((the character at end - 1 in url as a 32 bit integer) = 10 or (the character at end - 1 in url as a 32 bit integer) = 13):
+            set end to end - 1
+        set beginning to end
+        loop while beginning > 0 and (the character at beginning - 1 in url as a 32 bit integer) != 47:
+            set beginning to beginning - 1
+        if beginning = 0 or beginning = end:
+            return 0
+        set parsed_number to 0
+        set position to beginning
+        loop while position < end:
+            set character to the character at position in url as a 32 bit integer
+            if character < 48 or character > 57:
+                return 0
+            set digit to character - 48
+            if parsed_number > 214748364 or (parsed_number = 214748364 and digit > 7):
+                return 0
+            set parsed_number to parsed_number * 10 + digit
+            set position to position + 1
+        return parsed_number
+
+function ensure pinned issue titled {string:title} in {string:repository_name} with body {string:body} using {a pointer to github tools:tools}:
+    execute:
+        set existing to find issue titled title in repository_name using tools
+        if the inverse of existing's succeeded:
+            return a failed github operation reporting existing's error message
+        if the inverse of existing's found:
+            set arguments to an empty list of string
+            append the string form of "issue" to arguments
+            append the string form of "create" to arguments
+            append the string form of "-R" to arguments
+            append repository_name to arguments
+            append the string form of "--title" to arguments
+            append title to arguments
+            append the string form of "--body" to arguments
+            append body to arguments
+            set created to run github using tools with arguments
+            free arguments
+            if the inverse of created's succeeded:
+                return a failed github operation reporting created's error message
+            set created_url to created's standard output
+            set number to the issue number in created_url
+            if number = 0:
+                return a failed github operation reporting the string form of "GitHub did not return the newly created issue URL"
+            set existing to @intrinsic(
+                "construct",
+                a github issue result,
+                true,
+                true,
+                number,
+                the string form of "OPEN",
+                false,
+                the string form of ""
+            )
+        else:
+            set arguments to an empty list of string
+            append the string form of "issue" to arguments
+            append the string form of "edit" to arguments
+            append the string form of existing's number to arguments
+            append the string form of "-R" to arguments
+            append repository_name to arguments
+            append the string form of "--body" to arguments
+            append body to arguments
+            set edited to run github using tools with arguments
+            free arguments
+            if the inverse of edited's succeeded:
+                return a failed github operation reporting edited's error message
+            if existing's state = "CLOSED":
+                set reopened to run issue command "reopen" for existing's number in repository_name using tools
+                if the inverse of reopened's succeeded:
+                    return reopened
+        if the inverse of existing's pinned:
+            set pin_operation to run issue command "pin" for existing's number in repository_name using tools
+            if the inverse of pin_operation's succeeded:
+                return pin_operation
+        return a successful github operation with the string form of ""
+
+function close issue titled {string:title} in {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set existing to find issue titled title in repository_name using tools
+        if the inverse of existing's succeeded:
+            return a failed github operation reporting existing's error message
+        if the inverse of existing's found:
+            return a successful github operation with the string form of ""
+        if existing's pinned:
+            set unpinned to run issue command "unpin" for existing's number in repository_name using tools
+            if the inverse of unpinned's succeeded:
+                return unpinned
+        if existing's state != "CLOSED":
+            set arguments to an empty list of string
+            append the string form of "issue" to arguments
+            append the string form of "close" to arguments
+            append the string form of existing's number to arguments
+            append the string form of "-R" to arguments
+            append repository_name to arguments
+            append the string form of "--reason" to arguments
+            append the string form of "completed" to arguments
+            append the string form of "--comment" to arguments
+            append the string form of "Resolved." to arguments
+            set closed to run github using tools with arguments
+            free arguments
+            return github result from closed
+        return a successful github operation with the string form of ""
+
+local function a failed github pull request result reporting {string:message}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a github pull request result,
+            false,
+            false,
+            0,
+            the string form of "",
+            message
+        )
+
+function find scanner pull request in {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "pr" to arguments
+        append the string form of "list" to arguments
+        append the string form of "-R" to arguments
+        append repository_name to arguments
+        append the string form of "--state" to arguments
+        append the string form of "open" to arguments
+        append the string form of "--head" to arguments
+        append the scanner branch name to arguments
+        append the string form of "--json" to arguments
+        append the string form of "number,url" to arguments
+        append the string form of "--limit" to arguments
+        append the string form of "1" to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        if the inverse of completed's succeeded:
+            return a failed github pull request result reporting completed's error message
+        parse completed's standard output as JSON and set parsed to it
+        if parsed failed:
+            free parsed
+            return a failed github pull request result reporting the string form of "GitHub pull request list is not valid JSON"
+        set root to the value of parsed
+        if root is not a JSON array:
+            free parsed
+            return a failed github pull request result reporting the string form of "GitHub pull request list must be an array"
+        if the number of JSON items in root = 0:
+            free parsed
+            return @intrinsic(
+                "construct",
+                a github pull request result,
+                true,
+                false,
+                0,
+                the string form of "",
+                the string form of ""
+            )
+        set node to the JSON value at index 0 in root
+        if node is not a JSON object:
+            free parsed
+            return a failed github pull request result reporting the string form of "GitHub pull request data must be an object"
+        if node lacks JSON member named "number" or node lacks JSON member named "url":
+            free parsed
+            return a failed github pull request result reporting the string form of "GitHub pull request data is incomplete"
+        set number_node to the JSON member named "number" in node
+        set url_node to the JSON member named "url" in node
+        if the kind of number_node != the JSON number kind or the kind of url_node != the JSON text kind:
+            free parsed
+            return a failed github pull request result reporting the string form of "GitHub pull request data is invalid"
+        set number_value to the number of number_node
+        if number_value < 1.0 or number_value > 2147483647.0:
+            free parsed
+            return a failed github pull request result reporting the string form of "GitHub pull request number is invalid"
+        set number to number_value as an integer
+        set url to the text of url_node
+        free parsed
+        return @intrinsic(
+            "construct",
+            a github pull request result,
+            true,
+            true,
+            number,
+            url,
+            the string form of ""
+        )
+
+function update pull request {integer:number} in {string:repository_name} titled {string:title} with body {string:body} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "pr" to arguments
+        append the string form of "edit" to arguments
+        append the string form of number to arguments
+        append the string form of "-R" to arguments
+        append repository_name to arguments
+        append the string form of "--title" to arguments
+        append title to arguments
+        append the string form of "--body" to arguments
+        append body to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+function create scanner pull request in {string:repository_name} against {string:base_branch} titled {string:title} with body {string:body} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "pr" to arguments
+        append the string form of "create" to arguments
+        append the string form of "-R" to arguments
+        append repository_name to arguments
+        append the string form of "--head" to arguments
+        append the scanner branch name to arguments
+        append the string form of "--base" to arguments
+        append base_branch to arguments
+        append the string form of "--title" to arguments
+        append title to arguments
+        append the string form of "--body" to arguments
+        append body to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+function close pull request {integer:number} in {string:repository_name} using {a pointer to github tools:tools}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "pr" to arguments
+        append the string form of "close" to arguments
+        append the string form of number to arguments
+        append the string form of "-R" to arguments
+        append repository_name to arguments
+        append the string form of "--comment" to arguments
+        append the string form of "Repository convention violations are resolved." to arguments
+        set completed to run github using tools with arguments
+        free arguments
+        return github result from completed
+
+function free github repository result {github repository result:outcome}:
+    execute:
+        if outcome's repository != (0 as a pointer to github repository):
+            @intrinsic("destroy at", outcome's repository)
+            @intrinsic("call", "libc", "free", nothing, outcome's repository)
+
+function free github repository list result {github repository list result:outcome}:
+    execute:
+        free outcome's repositories
+
+function free github pull request result {github pull request result:outcome}:
+    execute:
+        @intrinsic("return")

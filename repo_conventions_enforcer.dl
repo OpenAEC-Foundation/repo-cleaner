@@ -1,0 +1,17 @@
+import src/program.dl
+
+set command_line to the command line arguments
+set arguments to an empty list of string
+set position to 0
+loop while position < command_line's length:
+    append the argument at position in command_line to arguments
+    set position to position + 1
+
+set tools to the default github tools
+set backends to the default language backends
+set exit_code to run the convention enforcer with arguments using tools and backends, with the standard license at "LICENSE.md"
+
+free language backends backends
+free github tools tools
+free arguments
+@intrinsic("call", "libc", "exit", nothing, exit_code)

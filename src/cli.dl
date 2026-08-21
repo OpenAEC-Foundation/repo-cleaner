@@ -1,0 +1,119 @@
+import lib/text.dl
+
+class:
+    patterns:
+        [the|] command line options
+    members:
+        check licenses as boolean
+        fix licenses as boolean
+        check repository naming as boolean
+        fix repository naming as boolean
+        check code conventions as boolean
+        fix code conventions as boolean
+        check readme as boolean
+        organization as string
+        single repository as string
+        string case as string
+        string value as string
+        show help as boolean
+
+class:
+    patterns:
+        [a|the|] command line result
+    members:
+        succeeded as boolean
+        options as a pointer to command line options
+        error message as string
+
+local function empty command line options:
+    execute:
+        set value to @intrinsic(
+            "construct",
+            the command line options,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            the string form of "OpenAEC-Foundation",
+            the string form of "",
+            the string form of "",
+            the string form of "",
+            false
+        )
+        allocate one slot of value and set allocated_options to it
+        return allocated_options
+
+local function a failed command line result for {a pointer to command line options:options} reporting {string:message}:
+    replacement:
+        @intrinsic("construct", a command line result, false, options, message)
+
+local function missing value after {string:argument} for {a pointer to command line options:options}:
+    replacement:
+        a failed command line result for options reporting (the string form of "Missing value after ") + argument
+
+function understand command line {a pointer to list:arguments}:
+    execute:
+        set options to empty command line options
+        set position to 0
+        loop while position < the length of arguments:
+            set argument to the item at position in arguments
+            if argument = "--licenses":
+                set options's check licenses to true
+            else if argument = "--fix-licenses":
+                set options's fix licenses to true
+            else if argument = "--repo-naming":
+                set options's check repository naming to true
+            else if argument = "--fix-repo-naming":
+                set options's fix repository naming to true
+            else if argument = "--code-conventions":
+                set options's check code conventions to true
+            else if argument = "--fix-code-conventions":
+                set options's fix code conventions to true
+            else if argument = "--readme":
+                set options's check readme to true
+            else if argument = "--help" or argument = "-h":
+                set options's show help to true
+            else if argument = "--org":
+                if position + 1 >= the length of arguments:
+                    return missing value after argument for options
+                set position to position + 1
+                set options's organization to the item at position in arguments
+            else if argument = "--single-repo":
+                if position + 1 >= the length of arguments:
+                    return missing value after argument for options
+                set position to position + 1
+                set options's single repository to the item at position in arguments
+            else if argument = "--string-naming":
+                if position + 2 >= the length of arguments:
+                    return missing value after argument for options
+                set position to position + 1
+                set options's string case to the item at position in arguments
+                set position to position + 1
+                set options's string value to the item at position in arguments
+            else:
+                return a failed command line result for options reporting (the string form of "Unknown argument: ") + argument
+            set position to position + 1
+
+        if options's check licenses and options's fix licenses:
+            return a failed command line result for options reporting the string form of "Cannot check and fix licenses in the same run"
+        if options's check repository naming and options's fix repository naming:
+            return a failed command line result for options reporting the string form of "Cannot check and fix repository naming in the same run"
+        if options's check code conventions and options's fix code conventions:
+            set options's check code conventions to true
+        return @intrinsic("construct", a command line result, true, options, the string form of "")
+
+function free command line options {a pointer to command line options:options}:
+    execute:
+        @intrinsic("destroy at", options)
+        @intrinsic("call", "libc", "free", nothing, options)
+
+function free command line result {command line result:outcome}:
+    execute:
+        free command line options outcome's options
+
+function [the|] convention enforcer help:
+    replacement:
+        the string form of "Usage: repo-conventions-enforcer [actions] [options]\n\nActions:\n  --licenses                 Check LGPL license files\n  --fix-licenses             Repair LGPL license files\n  --repo-naming              Check repository names\n  --fix-repo-naming          Rename repositories\n  --code-conventions         Check directory, file, and symbol names\n  --fix-code-conventions     Apply safe convention fixes through language tools\n  --readme                   Check for README.md\n  --string-naming CASE TEXT  Convert text to a configured case\n\nOptions:\n  --single-repo NAME         Process one repository\n  --org ORGANIZATION         GitHub organization (OpenAEC-Foundation)\n  --help                     Show this help\n"

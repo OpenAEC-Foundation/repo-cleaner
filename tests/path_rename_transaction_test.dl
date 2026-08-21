@@ -1,0 +1,146 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+
+set bad_directory to repository path from root and "BadDir"
+create a directory tree at bad_directory
+expect truth it succeeded
+set javascript_source to repository path from bad_directory and "module.js"
+write the string form of "export const value = 1;\n" to the file at javascript_source
+expect truth it succeeded
+set php_source to repository path from bad_directory and "module.php"
+write the string form of "<?php function value() { return 1; }\n" to the file at php_source
+expect truth it succeeded
+set reference_source to repository path from root and "main_file.js"
+set original_reference to the string form of "import { value } from './BadDir/module.js';\n"
+write original_reference to the file at reference_source
+expect truth it succeeded
+
+set accepting_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';request=read();assert request['method']=='workspace/willRenameFiles';old=request['params']['files'][0]['oldUri'];main=old.split('/BadDir',1)[0]+'/main_file.js';edit={'changes':{main:[{'range':{'start':{'line':0,'character':25},'end':{'line':0,'character':31}},'newText':'bad_dir'}]}};send({'jsonrpc':'2.0','id':request['id'],'result':edit});shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set rejecting_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';request=read();assert request['method']=='workspace/willRenameFiles';send({'jsonrpc':'2.0','id':request['id'],'error':{'code':-32603,'message':'intentional preparation failure'}});shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+
+set accepting_arguments to an empty list of string
+append the string form of "-u" to accepting_arguments
+append the string form of "-c" to accepting_arguments
+append accepting_script to accepting_arguments
+set javascript_backend to a language backend named "javascript" using "python3" with accepting_arguments
+set rejecting_arguments to an empty list of string
+append the string form of "-u" to rejecting_arguments
+append the string form of "-c" to rejecting_arguments
+append rejecting_script to rejecting_arguments
+set php_backend to a language backend named "php" using "python3" with rejecting_arguments
+set backends to an empty list of a pointer to language backend
+append javascript_backend to backends
+append php_backend to backends
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n    php:\n      function: snake_case\n      class: PascalCase\n      file: snake_case\n"
+expect truth loaded's succeeded
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends, applying fixes true
+expect falsehood enforced's succeeded
+expect falsehood enforced's changed
+expect truth (enforced's error message contains "intentional preparation failure")
+
+read the file at reference_source and set reference_after_failure to it
+expect truth reference_after_failure succeeded
+expect reference_after_failure's contents to equal original_reference
+set original_directory to the file system entry at bad_directory
+expect truth original_directory is a directory
+set renamed_directory to the file system entry at (repository path from root and "bad_dir")
+expect truth renamed_directory was absent
+
+free convention enforcement result enforced
+free conventions result loaded
+free backends
+free language backend javascript_backend
+free language backend php_backend
+remove the filesystem tree at root
+expect truth it succeeded
+
+create a temporary directory
+set combined_temporary to it
+expect truth combined_temporary succeeded
+set combined_root to combined_temporary's directory path
+set first_path to repository path from combined_root and "first.txt"
+set second_path to repository path from combined_root and "second.txt"
+write the string form of "first\n" to the file at first_path
+expect truth it succeeded
+write the string form of "second\n" to the file at second_path
+expect truth it succeeded
+set first_uri to the file URI for first_path interpreted as a native path
+expect truth first_uri succeeded
+set second_uri to the file URI for second_path interpreted as a native path
+expect truth second_uri succeeded
+
+set first_edit_text to the string form of "{\"changes\":{\""
+set first_edit_text to first_edit_text + first_uri's value
+set first_edit_text to first_edit_text + the string form of "\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":5}},\"newText\":\"FIRST\"}]}}"
+set first_parsing to the result of parsing first_edit_text as a workspace edit
+expect truth first_parsing succeeded
+set first_value to @intrinsic("construct", a path rename preparation, true, first_parsing's edit, the string form of "")
+set first_parsing's edit to 0 as a pointer to a parsed workspace edit
+free first_parsing
+allocate one slot of first_value and set first_prepared to it
+
+set second_edit_text to the string form of "{\"changes\":{\""
+set second_edit_text to second_edit_text + second_uri's value
+set second_edit_text to second_edit_text + the string form of "\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":6}},\"newText\":\"SECOND\"}]}}"
+set second_parsing to the result of parsing second_edit_text as a workspace edit
+expect truth second_parsing succeeded
+set second_value to @intrinsic("construct", a path rename preparation, true, second_parsing's edit, the string form of "")
+set second_parsing's edit to 0 as a pointer to a parsed workspace edit
+free second_parsing
+allocate one slot of second_value and set second_prepared to it
+
+set combined_preparations to an empty list of a pointer to path rename preparation
+append first_prepared to combined_preparations
+append second_prepared to combined_preparations
+set combined_application to apply path rename edits from combined_preparations rooted at combined_root
+expect truth combined_application's succeeded
+expect truth combined_application's changed
+free path rename preparations combined_preparations
+read the file at first_path and set first_after to it
+expect truth first_after succeeded
+expect first_after's contents to equal "FIRST\n"
+read the file at second_path and set second_after to it
+expect truth second_after succeeded
+expect second_after's contents to equal "SECOND\n"
+remove the filesystem tree at combined_root
+expect truth it succeeded
+
+create a temporary directory
+set reporting_temporary to it
+expect truth reporting_temporary succeeded
+set reporting_root to reporting_temporary's directory path
+set reporting_source to repository path from reporting_root and "BadFile.js"
+write the string form of "export const value = 1;\n" to the file at reporting_source
+expect truth it succeeded
+set reporting_script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0}}});assert read()['method']=='initialized'\nwhile True:\n message=read()\n if message['method']=='shutdown': send({'jsonrpc':'2.0','id':message['id'],'result':None});break\n if 'id' in message: send({'jsonrpc':'2.0','id':message['id'],'result':[]})\nassert read()['method']=='exit'"
+set reporting_arguments to an empty list of string
+append the string form of "-u" to reporting_arguments
+append the string form of "-c" to reporting_arguments
+append reporting_script to reporting_arguments
+set reporting_backend to a language backend named "javascript" using "python3" with reporting_arguments
+set reporting_backends to a list containing reporting_backend
+set reporting_rules to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      class: PascalCase\n      file: snake_case\n"
+expect truth reporting_rules's succeeded
+set reporting_result to enforce conventions in working copy reporting_root for repository "demo" using reporting_rules's conventions and reporting_backends, applying fixes true
+expect truth reporting_result's succeeded
+expect falsehood reporting_result's changed
+expect the length of reporting_result's report's remaining violations to equal 1
+expect the item at 0 in reporting_result's report's remaining violations to equal "BadFile.js -> bad_file.js"
+set reporting_original to the file system entry at reporting_source
+expect truth reporting_original is a regular file
+set reporting_target to the file system entry at (repository path from reporting_root and "bad_file.js")
+expect truth reporting_target was absent
+free convention enforcement result reporting_result
+free conventions result reporting_rules
+free reporting_backends
+free language backend reporting_backend
+remove the filesystem tree at reporting_root
+expect truth it succeeded
+
+print "path rename transaction: passed" as a line

@@ -1,0 +1,107 @@
+import support.dl
+import ../src/github.dl
+import ../src/scanner.dl
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+set fake_gh to repository path from root and "gh"
+set script to "#!/usr/bin/env python3\nimport base64,json,os,sys\na=sys.argv[1:];marker=__file__+'.created'\nif a[:2]==['auth','status']: sys.exit(0)\nif a[:2]==['repo','list']:\n print(json.dumps([{'name':'alpha-repo','defaultBranchRef':{'name':'main'}},{'name':'empty-repo','defaultBranchRef':None}]))\n sys.exit(0)\nif a[:2]==['repo','view']:\n print(json.dumps({'name':'alpha-repo','defaultBranchRef':{'name':'main'}}))\n sys.exit(0)\nif a[:2]==['repo','clone']:\n os.makedirs(a[3]);sys.exit(0)\nif a[:2]==['pr','list']:\n print(json.dumps([{'number':17,'url':'https://example.test/pr/17'}]));sys.exit(0)\nif a[:2] in (['pr','edit'],['pr','close']): sys.exit(0)\nif a[:2]==['pr','create']:\n print('https://example.test/pr/18');sys.exit(0)\nif a[:2]==['issue','list']:\n query=a[a.index('--search')+1]\n if 'Existing issue' in query: print(json.dumps([{'number':23,'title':'Existing issue','state':'CLOSED','isPinned':True}]))\n elif 'New issue' in query and os.path.exists(marker): print(json.dumps([{'number':24,'title':'New issue','state':'OPEN','isPinned':False}]))\n else: print('[]')\n sys.exit(0)\nif a[:2]==['issue','create']:\n open(marker,'w').close();print('https://example.test/issues/24');sys.exit(0)\nif a[:2] in (['issue','edit'],['issue','reopen'],['issue','pin'],['issue','unpin'],['issue','close']): sys.exit(0)\nif a and a[0]=='api' and 'contents/conventions.yaml' in a[1]:\n print('naming:\\n  repository:\\n    case: kebab-case');sys.exit(0)\nif a and a[0]=='api' and 'contents/LICENSE.md' in a[1]:\n if '--method' in a:\n  assert a.count('PUT')==1\n  payload=json.load(sys.stdin);assert base64.b64decode(payload['content'])==b'license text' and payload['sha']=='abc123' and payload['branch']=='main';sys.exit(0)\n print(json.dumps({'content':base64.b64encode(b'license text').decode(),'sha':'abc123'}));sys.exit(0)\nif a and a[0]=='api' and 'contents/missing.md' in a[1]:\n print('gh: Not Found (HTTP 404)',file=sys.stderr);sys.exit(1)\nif a and a[0]=='api': sys.exit(0)\nprint('unexpected arguments: '+repr(a),file=sys.stderr)\nsys.exit(2)\n"
+write script to the file at fake_gh
+expect truth (it succeeded)
+set chmod_arguments to an empty list of string
+append the string form of "+x" to chmod_arguments
+append fake_gh to chmod_arguments
+set made_executable to run tool "chmod" with chmod_arguments
+expect truth (made_executable's succeeded)
+free chmod_arguments
+
+set fake_git to repository path from root and "git"
+set git_script to "#!/usr/bin/env python3\nimport sys\na=sys.argv[1:]\nif a[:3]==['diff','--cached','--quiet']: sys.exit(1)\nif 'commit' in a:\n assert a[:5]==['-c','user.name=OpenAEC Convention Enforcer','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit']\nsys.exit(0)\n"
+write git_script to the file at fake_git
+expect truth (it succeeded)
+set chmod_arguments to an empty list of string
+append the string form of "+x" to chmod_arguments
+append fake_git to chmod_arguments
+set made_executable to run tool "chmod" with chmod_arguments
+expect truth (made_executable's succeeded)
+free chmod_arguments
+
+set tools to github tools using fake_gh and fake_git
+set authenticated to verify github authentication using tools
+expect truth (authenticated's succeeded)
+set fetched to fetch "conventions.yaml" from github repository "OpenAEC-Foundation/conventions" using tools
+expect truth (fetched's succeeded)
+expect truth (fetched's output contains "repository")
+
+set license to read github file "LICENSE.md" in "Example/alpha-repo" using tools
+expect truth license's succeeded
+expect truth license's found
+expect license's contents to equal "license text"
+expect license's sha to equal "abc123"
+set missing to read github file "missing.md" in "Example/alpha-repo" using tools
+expect truth missing's succeeded
+expect falsehood missing's found
+set written to write github file "LICENSE.md" in "Example/alpha-repo" with contents "license text", message "Update license", branch "main", and existing sha license's sha using tools
+expect truth written's succeeded
+
+set repositories_result to list repositories in "Example" using tools
+expect truth (repositories_result's succeeded)
+set repositories to repositories_result's repositories
+expect the length of repositories to equal 2
+set first to @intrinsic("cast", the item at 0 in repositories, a github repository)
+expect first's name to equal "alpha-repo"
+expect first's default branch to equal "main"
+expect falsehood (first's empty)
+set second to @intrinsic("cast", the item at 1 in repositories, a github repository)
+expect truth (second's empty)
+
+set single_result to inspect repository "Example/alpha-repo" using tools
+expect truth (single_result's succeeded)
+expect single_result's repository's name to equal "alpha-repo"
+expect single_result's repository's default branch to equal "main"
+
+set renamed to rename github repository "Example/alpha-repo" to "renamed-repo" using tools
+expect truth (renamed's succeeded)
+
+set checkout_path to repository path from root and "checkout"
+set checked_out to prepare scanner checkout of "Example/alpha-repo" at checkout_path from "main" using tools
+expect truth (checked_out's succeeded)
+set published to publish scanner changes in checkout_path using tools
+expect truth (published's succeeded)
+expect truth (published's changed)
+
+set existing to find scanner pull request in "Example/alpha-repo" using tools
+expect truth (existing's succeeded)
+expect truth (existing's found)
+expect existing's number to equal 17
+
+set updated to update pull request 17 in "Example/alpha-repo" titled "Title" with body "Body" using tools
+expect truth (updated's succeeded)
+set created to create scanner pull request in "Example/alpha-repo" against "main" titled "Title" with body "Body" using tools
+expect truth (created's succeeded)
+set closed to close pull request 17 in "Example/alpha-repo" using tools
+expect truth (closed's succeeded)
+
+set issue to find issue titled "Existing issue" in "Example/alpha-repo" using tools
+expect truth issue's succeeded
+expect truth issue's found
+expect issue's number to equal 23
+expect issue's state to equal "CLOSED"
+expect truth issue's pinned
+set ensured_existing to ensure pinned issue titled "Existing issue" in "Example/alpha-repo" with body "Updated" using tools
+expect truth ensured_existing's succeeded
+set ensured_new to ensure pinned issue titled "New issue" in "Example/alpha-repo" with body "Created" using tools
+expect truth ensured_new's succeeded
+set resolved to close issue titled "Existing issue" in "Example/alpha-repo" using tools
+expect truth resolved's succeeded
+
+free github pull request result existing
+free github repository result single_result
+free github repository list result repositories_result
+free github tools tools
+remove the filesystem tree at root
+expect truth (it succeeded)
+
+print "github: passed" as a line

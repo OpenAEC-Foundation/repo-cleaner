@@ -1,0 +1,53 @@
+import support.dl
+import ../src/language_server.dl
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+
+set source_path to repository path from root and "sample.js"
+write the string form of "function BadFunction() { return 1; }\n" to the file at source_path
+expect truth it succeeded
+
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':{'openClose':True,'change':2},'documentSymbolProvider':True,'renameProvider':True}}});assert read()['method']=='initialized';opened=read();assert opened['method']=='textDocument/didOpen';symbols=read();assert symbols['method']=='textDocument/documentSymbol';send({'jsonrpc':'2.0','id':symbols['id'],'result':[{'name':'BadFunction','kind':12,'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':40}},'selectionRange':{'start':{'line':0,'character':9},'end':{'line':0,'character':20}}}]});rename=read();assert rename['method']=='textDocument/rename';uri=rename['params']['textDocument']['uri'];send({'jsonrpc':'2.0','id':rename['id'],'result':{'changes':{uri:[{'range':{'start':{'line':0,'character':9},'end':{'line':0,'character':20}},'newText':'badFunction'}]}}});assert read()['method']=='textDocument/didChange';assert read()['method']=='textDocument/didClose';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set backend_arguments to an empty list of string
+append the string form of "-u" to backend_arguments
+append the string form of "-c" to backend_arguments
+append script to backend_arguments
+set backend to a language backend named "javascript" using "python3" with backend_arguments
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      function: camelCase\n      file: snake_case\n"
+expect truth loaded's succeeded
+set scanned to scan repository tree at root
+expect truth scanned's succeeded
+set tree to scanned's tree
+set rules to loaded's conventions
+
+set begun to begin language session using backend in root
+expect truth begun's succeeded
+set session to begun's session
+set found to find next "function" violation through session in tree with rules
+expect truth found's succeeded
+expect truth found's candidate's found
+expect found's candidate's name to equal "BadFunction"
+expect found's candidate's replacement to equal "badFunction"
+expect found's candidate's line as an integer to equal 0
+expect found's candidate's character as an integer to equal 9
+
+set renamed to apply symbol rename found's candidate through session
+expect truth renamed's succeeded
+expect truth renamed's changed
+set finished to finish language session session
+expect truth finished's succeeded
+read the file at source_path and set renamed_source to it
+expect truth (renamed_source succeeded)
+expect renamed_source's contents to equal "function badFunction() { return 1; }\n"
+
+free repository tree result scanned
+free conventions result loaded
+free language backend backend
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "language server: passed" as a line

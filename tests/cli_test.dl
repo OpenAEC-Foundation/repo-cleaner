@@ -1,0 +1,36 @@
+import support.dl
+import ../src/cli.dl
+
+set arguments to an empty list of string
+append the string form of "--code-conventions" to arguments
+append the string form of "--fix-code-conventions" to arguments
+append the string form of "--single-repo" to arguments
+append the string form of "demo" to arguments
+append the string form of "--org" to arguments
+append the string form of "Example" to arguments
+
+set parsed to understand command line arguments
+expect truth (parsed's succeeded)
+set options to parsed's options
+expect truth (options's check code conventions)
+expect truth (options's fix code conventions)
+expect options's single repository to equal "demo"
+expect options's organization to equal "Example"
+free command line result parsed
+
+set conflicting to an empty list of string
+append the string form of "--licenses" to conflicting
+append the string form of "--fix-licenses" to conflicting
+set rejected to understand command line conflicting
+expect falsehood (rejected's succeeded)
+expect rejected's error message to equal "Cannot check and fix licenses in the same run"
+free command line result rejected
+
+set unknown to an empty list of string
+append the string form of "--surprise" to unknown
+set unknown_result to understand command line unknown
+expect falsehood (unknown_result's succeeded)
+expect unknown_result's error message to equal "Unknown argument: --surprise"
+free command line result unknown_result
+
+print "cli: passed" as a line

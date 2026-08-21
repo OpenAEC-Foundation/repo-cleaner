@@ -1,0 +1,46 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth (temporary succeeded)
+set root to temporary's directory path
+set bad_directory to repository path from root and "BadDir"
+create a directory at bad_directory
+expect truth (it succeeded)
+set bad_file to repository path from bad_directory and "BadFile.js"
+write the string form of "export const value = 1;\n" to the file at bad_file
+expect truth (it succeeded)
+
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized'\nfor old,new in [('BadDir','bad_dir'),('BadFile.js','bad_file.js')]:\n request=read();assert request['method']=='workspace/willRenameFiles';change=request['params']['files'][0];assert change['oldUri'].endswith('/'+old) and change['newUri'].endswith('/'+new);send({'jsonrpc':'2.0','id':request['id'],'result':None});assert read()['method']=='workspace/didRenameFiles'\nshutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set backend_arguments to an empty list of string
+append the string form of "-u" to backend_arguments
+append the string form of "-c" to backend_arguments
+append script to backend_arguments
+set backend to a language backend named "javascript" using "python3" with backend_arguments
+set backends to an empty list of a pointer to language backend
+append backend to backends
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    javascript:\n      file: snake_case\n"
+expect truth loaded's succeeded
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends, applying fixes true
+expect truth enforced's succeeded
+expect truth enforced's changed
+expect the length of enforced's report's fixes to equal 2
+expect the length of enforced's report's remaining violations to equal 0
+
+set good_directory to repository path from root and "bad_dir"
+set good_file to repository path from good_directory and "bad_file.js"
+set directory_entry to the file system entry at good_directory
+expect truth (directory_entry is a directory)
+set file_entry to the file system entry at good_file
+expect truth (file_entry is a regular file)
+
+free convention enforcement result enforced
+free conventions result loaded
+free backends
+free language backend backend
+remove the filesystem tree at root
+expect truth (it succeeded)
+
+print "enforcer: passed" as a line
