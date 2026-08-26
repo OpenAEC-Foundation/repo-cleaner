@@ -16,6 +16,7 @@ expect (convert "one-two-three-four" to kebab case) to equal "one-two-three-four
 expect (convert "one-two-three-four" to pascal case) to equal "OneTwoThreeFour"
 expect (convert "dynlex_filesystem_staging_create" to camel case) to equal "dynlexFilesystemStagingCreate"
 expect (convert "dynlex_filesystem_staging_cancel" to camel case) to equal "dynlexFilesystemStagingCancel"
+expect (convert "badConstantName" to screaming snake case) to equal "BAD_CONSTANT_NAME"
 
 expect truth ("open-pdf-studio" follows kebab case)
 expect falsehood ("Open-PDF-Studio" follows kebab case)
@@ -25,8 +26,10 @@ expect truth ("openPdfStudio" follows camel case)
 expect falsehood ("OpenPdfStudio" follows camel case)
 expect truth ("OpenPdfStudio" follows pascal case)
 expect falsehood ("openPdfStudio" follows pascal case)
+expect truth ("OPEN_PDF_STUDIO" follows screaming snake case)
+expect falsehood ("OpenPdfStudio" follows screaming snake case)
 
-set source to the string form of "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      function: snake_case\n      class: PascalCase\n      file: snake_case\n    cpp:\n      function: camelCase\n      class: PascalCase\n      file: camelCase\n"
+set source to the string form of "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      function: snake_case\n      class: PascalCase\n      file: snake_case\n    cpp:\n      function: camelCase\n      class: PascalCase\n      file: camelCase\n    rust:\n      namespace: snake_case\n      class: PascalCase\n      function: snake_case\n      variable: snake_case\n      constant: SCREAMING_SNAKE_CASE\n      enum: PascalCase\n      file: snake_case\n"
 set loaded to load conventions from source
 expect truth (loaded's succeeded)
 set rules to loaded's conventions
@@ -35,6 +38,8 @@ expect (the directory case in rules) to equal snake case
 expect (the case for "php" "function" in rules) to equal snake case
 expect (the case for "cpp" "file" in rules) to equal camel case
 expect (the case for "cpp" "variable" in rules) to equal no case
+expect (the case for "rust" "constant" in rules) to equal screaming snake case
+expect (the case for "rust" "file" in rules) to equal snake case
 free conventions result loaded
 
 set invalid_repository_case to load conventions from "naming:\n  repository:\n    case: SCREAMING_CASE\n  directory:\n    case: snake_case\n"

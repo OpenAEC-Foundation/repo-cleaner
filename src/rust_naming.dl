@@ -1,0 +1,230 @@
+import commands.dl
+import conventions.dl
+import language_server_types.dl
+import scanner.dl
+import lib/json.dl
+import lib/text.dl
+import lib/unicode.dl
+
+class:
+    patterns:
+        [a|the|] Rust naming search result
+    members:
+        succeeded as boolean
+        candidate as symbol candidate
+        error message as string
+
+local function an empty Rust naming candidate:
+    replacement:
+        @intrinsic(
+            "construct",
+            a symbol candidate,
+            false,
+            the string form of "",
+            the string form of "",
+            the string form of "",
+            the string form of "rust",
+            the string form of "",
+            the string form of "",
+            the string form of "",
+            0,
+            0
+        )
+
+local function a failed Rust naming search reporting {string:message}:
+    replacement:
+        @intrinsic("construct", a Rust naming search result, false, an empty Rust naming candidate, message)
+
+local function a successful Rust naming search containing {symbol candidate:candidate}:
+    replacement:
+        @intrinsic("construct", a Rust naming search result, true, candidate, the string form of "")
+
+local function Rust category for lint {string:code}:
+    execute:
+        if code = "non_camel_case_types":
+            return the string form of "class"
+        if code = "non_snake_case":
+            return the string form of "variable"
+        if code = "non_upper_case_globals":
+            return the string form of "constant"
+        return the string form of ""
+
+local function Rust source position for {string:file_name} in {a pointer to repository tree:tree}:
+    execute:
+        set entries to tree's entries
+        set cursor to 0
+        loop while cursor < the length of entries:
+            set source_entry to @intrinsic("cast", the item at cursor in entries, a repository entry)
+            if the inverse of source_entry's directory and source_entry's language = "rust":
+                if source_entry's relative path = file_name or source_entry's absolute path = file_name:
+                    return cursor
+            set cursor to cursor + 1
+        return 0 - 1
+
+local function JSON integer value of {a pointer to a JSON value:node}:
+    execute:
+        if node = (0 as a pointer to a JSON value):
+            return 0 - 1
+        if JSON-RPC number node is not an integer identifier:
+            return 0 - 1
+        set numeric to the number of node
+        if numeric < 0.0 or numeric > 2147483647.0:
+            return 0 - 1
+        return numeric as an integer
+
+local function Rust naming candidate from {a pointer to a JSON value:span} in category {string:category} using {a pointer to repository tree:tree} with {a pointer to conventions:rules}:
+    execute:
+        if span is not a JSON object:
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic span is not an object"
+        if span lacks JSON member named "file_name" or (span lacks JSON member named "byte_start" or (span lacks JSON member named "byte_end" or span lacks JSON member named "line_start")):
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic span is incomplete"
+        set file_node to the JSON member named "file_name" in span
+        if the kind of file_node != the JSON text kind:
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic path is invalid"
+        set source_position to Rust source position for (the text of file_node) in tree
+        if source_position < 0:
+            return a successful Rust naming search containing an empty Rust naming candidate
+        set entries to tree's entries
+        set entry to @intrinsic("cast", the item at source_position in entries, a repository entry)
+
+        set byte_start to JSON integer value of (the JSON member named "byte_start" in span)
+        set byte_end to JSON integer value of (the JSON member named "byte_end" in span)
+        set line_start to JSON integer value of (the JSON member named "line_start" in span)
+        if byte_start < 0 or (byte_end <= byte_start or line_start <= 0):
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic position is invalid"
+        read the file at entry's absolute path and set source to it
+        if source failed:
+            return a failed Rust naming search reporting source's error message
+        if byte_end > the length of source's contents:
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic is outside its source file"
+        set name to the substring of source's contents from byte_start spanning (byte_end - byte_start) bytes
+        set style to the case for "rust" category in rules
+        if style = the no case or name follows style in rules:
+            return a successful Rust naming search containing an empty Rust naming candidate
+        set replacement to convert name to style
+        if the length of replacement = 0:
+            return a failed Rust naming search reporting (the string form of "No safe Rust case conversion is available for symbol ") + name
+
+        scan lines in source's contents and set scanned to it
+        if the status of scanned != the text position success status:
+            return a failed Rust naming search reporting the string form of "Rust source is not valid UTF-8"
+        set lines to the line index of scanned
+        set line_beginning to the start of line (line_start - 1) in lines
+        if the status of line_beginning != the text position success status:
+            free lines
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic line is outside its source file"
+        set line_byte_start to line_beginning's position
+        free lines
+        if byte_start < line_byte_start:
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic byte offset precedes its line"
+        set prefix_length to byte_start - line_byte_start
+        set prefix to the substring of source's contents from line_byte_start spanning prefix_length bytes
+        set converted to the UTF-16 position of UTF-8 byte offset prefix_length in prefix
+        if the status of converted != the text position success status:
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic does not identify a valid UTF-8 position"
+        set uri_result to the file URI for entry's absolute path interpreted as a native path
+        if uri_result failed or uri_result is unsupported:
+            return a failed Rust naming search reporting uri_result's error message
+        set constructed_candidate to @intrinsic(
+            "construct",
+            a symbol candidate,
+            true,
+            entry's absolute path,
+            entry's relative path,
+            uri_result's value,
+            the string form of "rust",
+            category,
+            name,
+            replacement,
+            (line_start - 1) as a 32 bit integer,
+            converted's position
+        )
+        return a successful Rust naming search containing constructed_candidate
+
+local function Rust naming candidate from {a pointer to a JSON value:message} using {a pointer to repository tree:tree} with {a pointer to conventions:rules}:
+    execute:
+        if message is not a JSON object or message lacks JSON member named "code":
+            return a successful Rust naming search containing an empty Rust naming candidate
+        set code_container to the JSON member named "code" in message
+        if code_container is JSON null:
+            return a successful Rust naming search containing an empty Rust naming candidate
+        if code_container is not a JSON object or code_container lacks JSON member named "code":
+            return a failed Rust naming search reporting the string form of "Rust compiler diagnostic code is invalid"
+        set code_node to the JSON member named "code" in code_container
+        if the kind of code_node != the JSON text kind:
+            return a failed Rust naming search reporting the string form of "Rust compiler diagnostic code is invalid"
+        set category to Rust category for lint (the text of code_node)
+        if the length of category = 0:
+            return a successful Rust naming search containing an empty Rust naming candidate
+        if message lacks JSON member named "spans":
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic has no spans"
+        set spans to the JSON member named "spans" in message
+        if spans is not a JSON array:
+            return a failed Rust naming search reporting the string form of "Rust naming diagnostic spans are invalid"
+        set position to 0
+        loop while position < the number of JSON items in spans:
+            set span to the JSON value at index position in spans
+            if span is not a JSON object or span lacks JSON member named "is_primary":
+                return a failed Rust naming search reporting the string form of "Rust naming diagnostic span has no primary marker"
+            set primary_node to the JSON member named "is_primary" in span
+            if the kind of primary_node != the JSON boolean kind:
+                return a failed Rust naming search reporting the string form of "Rust naming diagnostic primary marker is invalid"
+            if the boolean of primary_node:
+                return Rust naming candidate from span in category category using tree with rules
+            set position to position + 1
+        return a failed Rust naming search reporting the string form of "Rust naming diagnostic has no primary span"
+
+function find a Rust compiler naming violation in {a pointer to repository tree:tree} with {a pointer to conventions:rules}:
+    execute:
+        set arguments to an empty list of string
+        append the string form of "-c" to arguments
+        append the string form of "RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }--force-warn=nonstandard_style\"; export RUSTFLAGS; exec cargo \"$@\"" to arguments
+        append the string form of "cargo" to arguments
+        append the string form of "check" to arguments
+        append the string form of "--workspace" to arguments
+        append the string form of "--all-targets" to arguments
+        append the string form of "--jobs" to arguments
+        append the string form of "2" to arguments
+        append the string form of "--message-format=json" to arguments
+        set checked to run tool "sh" with arguments in tree's root
+        free arguments
+        if the inverse of checked's succeeded:
+            set message to the string form of "Rust workspace validation failed"
+            if the length of checked's standard error > 0:
+                set message to (message + the string form of ": ") + checked's standard error
+            return a failed Rust naming search reporting message
+
+        set messages to checked's standard output split at the string form of "\n"
+        set position to 0
+        loop while position < the length of messages:
+            set line to the item at position in messages
+            if the length of line > 0:
+                parse line as JSON and set parsed to it
+                if parsed failed:
+                    free parsed
+                    free messages
+                    return a failed Rust naming search reporting the string form of "Cargo returned invalid JSON diagnostics"
+                set envelope to the value of parsed
+                if envelope is not a JSON object or envelope lacks JSON member named "reason":
+                    free parsed
+                    free messages
+                    return a failed Rust naming search reporting the string form of "Cargo returned an invalid diagnostic envelope"
+                set reason_node to the JSON member named "reason" in envelope
+                if the kind of reason_node != the JSON text kind:
+                    free parsed
+                    free messages
+                    return a failed Rust naming search reporting the string form of "Cargo returned an invalid diagnostic reason"
+                if the text of reason_node = "compiler-message":
+                    if envelope lacks JSON member named "message":
+                        free parsed
+                        free messages
+                        return a failed Rust naming search reporting the string form of "Cargo compiler diagnostic has no message"
+                    set found to Rust naming candidate from (the JSON member named "message" in envelope) using tree with rules
+                    if the inverse of found's succeeded or found's candidate's found:
+                        free parsed
+                        free messages
+                        return found
+                free parsed
+            set position to position + 1
+        free messages
+        return a successful Rust naming search containing an empty Rust naming candidate

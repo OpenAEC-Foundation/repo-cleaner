@@ -22,6 +22,10 @@ function [the|] pascal case:
     replacement:
         4
 
+function [the|] screaming snake case:
+    replacement:
+        5
+
 class:
     patterns:
         [the|] conventions
@@ -31,6 +35,7 @@ class:
         kebab pattern as string
         camel pattern as string
         pascal pattern as string
+        screaming snake pattern as string
 
 class:
     patterns:
@@ -58,6 +63,8 @@ function [the|] case named {string:name}:
             return the camel case
         if name = "PascalCase":
             return the pascal case
+        if name = "SCREAMING_SNAKE_CASE":
+            return the screaming snake case
         return the no case
 
 function [the|] name of case {integer:style}:
@@ -70,6 +77,8 @@ function [the|] name of case {integer:style}:
             return the string form of "camelCase"
         if style = the pascal case:
             return the string form of "PascalCase"
+        if style = the screaming snake case:
+            return the string form of "SCREAMING_SNAKE_CASE"
         return the string form of "undefined"
 
 local function require mapping {string:name} in {a pointer to a YAML mapping node:parent}:
@@ -191,6 +200,7 @@ function load conventions from {string:source}:
                 set known_case to known_case or case_name = "kebab-case"
                 set known_case to known_case or case_name = "camelCase"
                 set known_case to known_case or case_name = "PascalCase"
+                set known_case to known_case or case_name = "SCREAMING_SNAKE_CASE"
                 if known_case:
                     if the inverse of (case_node is a YAML mapping):
                         set message to (the string form of "Conventions must define naming.case.") + case_name
@@ -213,17 +223,20 @@ function load conventions from {string:source}:
         set kebab_pattern to the string form of "^[a-z][a-z0-9-]*$"
         set camel_pattern to the string form of "^[a-z][a-zA-Z0-9]*$"
         set pascal_pattern to the string form of "^[A-Z][a-zA-Z0-9]*$"
+        set screaming_snake_pattern to the string form of "^[A-Z][A-Z0-9_]*$"
         if cases != (0 as a pointer to a YAML mapping node):
             set snake_pattern to optional pattern "snake_case" in cases defaulting to snake_pattern
             set kebab_pattern to optional pattern "kebab-case" in cases defaulting to kebab_pattern
             set camel_pattern to optional pattern "camelCase" in cases defaulting to camel_pattern
             set pascal_pattern to optional pattern "PascalCase" in cases defaulting to pascal_pattern
+            set screaming_snake_pattern to optional pattern "SCREAMING_SNAKE_CASE" in cases defaulting to screaming_snake_pattern
 
         compile snake_pattern as a regular expression and set snake_expression to it
         compile kebab_pattern as a regular expression and set kebab_expression to it
         compile camel_pattern as a regular expression and set camel_expression to it
         compile pascal_pattern as a regular expression and set pascal_expression to it
-        if (snake_expression is invalid) or ((kebab_expression is invalid) or ((camel_expression is invalid) or (pascal_expression is invalid))):
+        compile screaming_snake_pattern as a regular expression and set screaming_snake_expression to it
+        if (snake_expression is invalid) or ((kebab_expression is invalid) or ((camel_expression is invalid) or ((pascal_expression is invalid) or (screaming_snake_expression is invalid)))):
             free parsed
             return a failed conventions result reporting the string form of "Conventions contain an invalid case pattern"
 
@@ -234,7 +247,8 @@ function load conventions from {string:source}:
             snake_pattern,
             kebab_pattern,
             camel_pattern,
-            pascal_pattern
+            pascal_pattern,
+            screaming_snake_pattern
         )
         allocate one slot of value and set rules to it
         return @intrinsic("construct", a conventions result, true, rules, the string form of "")
@@ -292,6 +306,8 @@ local function [the|] pattern for case {integer:style} in {a pointer to conventi
             return rules's camel pattern
         if style = the pascal case:
             return rules's pascal pattern
+        if style = the screaming snake case:
+            return rules's screaming snake pattern
         return the string form of ""
 
 function {string:name} follows {integer:style} in {a pointer to conventions:rules}:
@@ -312,6 +328,8 @@ function {string:name} follows {integer:style}:
             set pattern to the string form of "^[a-z][a-zA-Z0-9]*$"
         if style = the pascal case:
             set pattern to the string form of "^[A-Z][a-zA-Z0-9]*$"
+        if style = the screaming snake case:
+            set pattern to the string form of "^[A-Z][A-Z0-9_]*$"
         if the length of pattern = 0:
             return false
         return name contains a match for the regular expression described by pattern
@@ -400,7 +418,7 @@ function [the|] number of words in {string:name}:
 function convert {string:name} to {integer:style}:
     execute:
         set normalized to normalized words from name
-        if style = the snake case or style = the kebab case:
+        if style = the snake case or (style = the kebab case or style = the screaming snake case):
             set separator to 95 as a byte
             if style = the kebab case:
                 set separator to 45 as a byte
@@ -410,6 +428,8 @@ function convert {string:name} to {integer:style}:
                 set value to the character at position in normalized
                 if value as a 32 bit integer = 124:
                     set value to separator
+                else if style = the screaming snake case:
+                    set value to the uppercase ASCII character corresponding to value
                 store value into the data of result at position
                 set position to position + 1
             return result

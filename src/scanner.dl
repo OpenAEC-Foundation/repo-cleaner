@@ -26,6 +26,7 @@ class:
         PHP detected as boolean
         C plus plus detected as boolean
         JavaScript detected as boolean
+        Rust detected as boolean
 
 class:
     patterns:
@@ -63,6 +64,7 @@ local class:
         PHP detected as boolean
         C plus plus detected as boolean
         JavaScript detected as boolean
+        Rust detected as boolean
         error message as string
 
 local function an empty repository tree pointer:
@@ -153,7 +155,7 @@ local function path {string:name} is ignored by the scanner:
     execute:
         if the length of name > 0 and the character at 0 in name as a 32 bit integer = 46:
             return true
-        return name = "node_modules" or (name = "vendor" or (name = "third_party" or (name = "dist" or name = "__pycache__")))
+        return name = "node_modules" or (name = "vendor" or (name = "third_party" or (name = "dist" or (name = "target" or name = "__pycache__"))))
 
 local function source {string:contents} supports symbol analysis:
     execute:
@@ -178,6 +180,8 @@ function [the|] language for source path {string:path}:
             return the string form of "javascript"
         if extension = ".c" or (extension = ".cc" or (extension = ".cpp" or (extension = ".cxx" or (extension = ".h" or (extension = ".hh" or (extension = ".hpp" or extension = ".hxx")))))):
             return the string form of "cpp"
+        if extension = ".rs":
+            return the string form of "rust"
         return the string form of ""
 
 function path is a supported source file:
@@ -257,11 +261,13 @@ local function scan directory {string:directory_path} relative to {string:relati
                         set state's C plus plus detected to true
                     if language = "javascript":
                         set state's JavaScript detected to true
+                    if language = "rust":
+                        set state's Rust detected to true
 
 function scan repository tree at {string:root}:
     execute:
         set entries to an empty list of repository entry
-        set state_value to @intrinsic("construct", a tree scan state, true, entries, false, false, false, the string form of "")
+        set state_value to @intrinsic("construct", a tree scan state, true, entries, false, false, false, false, the string form of "")
         allocate one slot of state_value and set state to it
         scan directory root relative to the string form of "" using state
         if the inverse of state's succeeded:
@@ -277,7 +283,8 @@ function scan repository tree at {string:root}:
             entries,
             state's PHP detected,
             state's C plus plus detected,
-            state's JavaScript detected
+            state's JavaScript detected,
+            state's Rust detected
         )
         allocate one slot of tree_value and set tree_pointer to it
         @intrinsic("destroy at", state)
@@ -292,6 +299,8 @@ function {a pointer to repository tree:tree} includes language {string:language}
             return tree's C plus plus detected
         if language = "javascript":
             return tree's JavaScript detected
+        if language = "rust":
+            return tree's Rust detected
         return false
 
 function [the|] detected language names in {a pointer to repository tree:tree}:
@@ -303,6 +312,8 @@ function [the|] detected language names in {a pointer to repository tree:tree}:
             insert the string form of "javascript" into detected_names at index the length of detected_names
         if tree's PHP detected:
             insert the string form of "php" into detected_names at index the length of detected_names
+        if tree's Rust detected:
+            insert the string form of "rust" into detected_names at index the length of detected_names
         return detected_names
 
 local function [the|] path depth of {string:path}:

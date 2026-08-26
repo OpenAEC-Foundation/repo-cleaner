@@ -41,6 +41,12 @@ local function verify code convention tools in {a pointer to list:backends} usin
         set checked to verify executable "clang-format" for "C++ formatter"
         if the inverse of checked's succeeded:
             return checked
+        set checked to verify executable "cargo" for "Rust workspace manager"
+        if the inverse of checked's succeeded:
+            return checked
+        set checked to verify executable "rustfmt" for "Rust formatter"
+        if the inverse of checked's succeeded:
+            return checked
         set position to 0
         loop while position < the length of backends:
             set backend to @intrinsic("cast", the item at position in backends, a pointer to language backend)

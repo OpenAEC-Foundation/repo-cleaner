@@ -253,17 +253,7 @@ function prepare references for path rename {rename candidate:candidate} through
             return an allocated failed path rename preparation reporting message
 
         set parameters to LSP file rename parameters from source_uri's value to target_uri's value
-        set sent to the result of sending an LSP request "workspace/willRenameFiles" with parameters using client
-        if sent failed:
-            set message to sent's error message
-            free parameters
-            set closed to close path rename documents documents's URIs using client
-            free documents's URIs
-            if the inverse of closed's succeeded:
-                set message to message + the string form of "; closing path-rename documents failed: "
-                set message to message + closed's error message
-            return an allocated failed path rename preparation reporting message
-        set response to receive reply to sent from client
+        set response to receive stable reply to LSP request "workspace/willRenameFiles" with parameters from client
         if response failed:
             set message to error reported by response
             set refused to response's status = the JSON-RPC remote error status
@@ -316,6 +306,42 @@ function prepare references for path rename {rename candidate:candidate} through
         free response
         free parameters
         return an allocated successful path rename preparation containing edit
+
+local function open versioned documents from {a pointer to a parsed workspace edit:edit} using {a pointer to a workspace edit context:context}:
+    execute:
+        set changes to edit's changes
+        set position to 0
+        loop while position < the length of changes:
+            set change to the workspace change at index position in changes
+            if change's kind = the workspace text change kind and change's version presence:
+                set normalized to the normalized workspace file URI for change's uri inside context's root path
+                if normalized failed:
+                    return a failed path rename changed false reporting normalized's failure reason
+                set existing to the workspace open document identified by normalized's identity in context
+                if existing = (0 as a pointer to a workspace open document):
+                    read the file at normalized's path and set source to it
+                    if source failed:
+                        return a failed path rename changed false reporting source's error message
+                    set opened to the result of opening workspace document change's uri with text source's contents at version change's version in context
+                    if opened failed:
+                        return a failed path rename changed false reporting opened's failure reason
+            set position to position + 1
+        return a successful path operation changed false described by the string form of ""
+
+local function persist open workspace documents from {a pointer to a workspace edit context:context}:
+    execute:
+        set open_documents to context's documents
+        set position to 0
+        set changed to false
+        loop while position < the length of open_documents:
+            set document to the workspace open document at index position in open_documents
+            write document's text to the file at document's path
+            set persisted to it
+            if persisted failed:
+                return a failed path rename changed changed reporting persisted's error message
+            set changed to true
+            set position to position + 1
+        return a successful path operation changed changed described by the string form of ""
 
 function apply path rename edits from {a pointer to list:preparations} rooted at {string:root}:
     execute:
@@ -371,11 +397,24 @@ function apply path rename edits from {a pointer to list:preparations} rooted at
             free combined
             return a failed path rename changed false reporting message
         set context to context_result's context
+        set opened to open versioned documents from combined using context
+        if the inverse of opened's succeeded:
+            set message to opened's error message
+            free context
+            free combined
+            return a failed path rename changed false reporting message
         set applied to the result of applying parsed workspace edit combined using context
+        if applied was not applied:
+            set message to applied's failure reason
+            set changed to applied's possible application
+            free context
+            free combined
+            return a failed path rename changed changed reporting message
+        set persisted to persist open workspace documents from context
         free context
         free combined
-        if applied was not applied:
-            return a failed path rename changed applied's possible application reporting applied's failure reason
+        if the inverse of persisted's succeeded:
+            return persisted
         return a successful path operation changed true described by the string form of ""
 
 function announce path rename {rename candidate:candidate} through {a pointer to language session:session}:

@@ -10,8 +10,11 @@ set source_path to repository path from root and "BadName.js"
 set target_path to repository path from root and "bad_name.js"
 write the string form of "export const value = 1;\n" to the file at source_path
 expect truth (it succeeded)
+set reference_path to repository path from root and "main.js"
+write the string form of "import { value } from \"./BadName.js\";\n" to the file at reference_path
+expect truth it succeeded
 
-set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();caps=init['params']['capabilities']['workspace'];assert caps['workspaceEdit']['documentChanges'] is True;assert caps['fileOperations']=={'willRename':True,'didRename':True};send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';request=read();assert request['method']=='workspace/willRenameFiles';change=request['params']['files'][0];assert change['oldUri'].endswith('/BadName.js') and change['newUri'].endswith('/bad_name.js');send({'jsonrpc':'2.0','id':request['id'],'result':None});notification=read();assert notification['method']=='workspace/didRenameFiles';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
+set script to "import json,sys\ndef read():\n h={}\n while True:\n  line=sys.stdin.buffer.readline()\n  if line==b'\\r\\n': break\n  n,v=line.decode('ascii').split(':',1);h[n.lower()]=v.strip()\n return json.loads(sys.stdin.buffer.read(int(h['content-length'])))\ndef send(m):\n p=json.dumps(m,separators=(',',':')).encode();sys.stdout.buffer.write(b'Content-Length: '+str(len(p)).encode()+b'\\r\\n\\r\\n'+p);sys.stdout.buffer.flush()\ninit=read();caps=init['params']['capabilities']['workspace'];assert caps['workspaceEdit']['documentChanges'] is True;assert caps['fileOperations']=={'willRename':True,'didRename':True};send({'jsonrpc':'2.0','id':init['id'],'result':{'capabilities':{'textDocumentSync':0,'workspace':{'fileOperations':{'willRename':{},'didRename':{}}}}}});assert read()['method']=='initialized';request=read();assert request['method']=='workspace/willRenameFiles';change=request['params']['files'][0];assert change['oldUri'].endswith('/BadName.js') and change['newUri'].endswith('/bad_name.js');uri=change['oldUri'].rsplit('/',1)[0]+'/main.js';edit={'documentChanges':[{'textDocument':{'uri':uri,'version':1},'edits':[{'range':{'start':{'line':0,'character':25},'end':{'line':0,'character':32}},'newText':'bad_name'}]}]};send({'jsonrpc':'2.0','id':request['id'],'result':edit});notification=read();assert notification['method']=='workspace/didRenameFiles';shutdown=read();assert shutdown['method']=='shutdown';send({'jsonrpc':'2.0','id':shutdown['id'],'result':None});assert read()['method']=='exit'"
 set backend_arguments to an empty list of string
 append the string form of "-u" to backend_arguments
 append the string form of "-c" to backend_arguments
@@ -51,6 +54,9 @@ set source_entry to the file system entry at source_path
 expect truth (source_entry was absent)
 set target_entry to the file system entry at target_path
 expect truth (target_entry is a regular file)
+read the file at reference_path and set updated_reference to it
+expect truth updated_reference succeeded
+expect updated_reference's contents to equal "import { value } from \"./bad_name.js\";\n"
 
 free language backend backend
 remove the filesystem tree at root

@@ -18,6 +18,17 @@ set php_path to repository path from root and the string form of "good_file.php"
 write the string form of "<?php\n" to the file at php_path
 expect truth (it succeeded)
 
+set rust_path to repository path from root and the string form of "BadRustFile.rs"
+write the string form of "pub fn good_name() {}\n" to the file at rust_path
+expect truth (it succeeded)
+
+set cargo_target_parent to repository path from root and the string form of "target/debug/build"
+create a directory tree at cargo_target_parent
+expect truth (it succeeded)
+set cargo_target to repository path from cargo_target_parent and the string form of "BadGenerated.rs"
+write the string form of "pub fn BadGeneratedName() {}\n" to the file at cargo_target
+expect truth (it succeeded)
+
 set hidden_directory to repository path from root and the string form of ".github"
 create a directory at hidden_directory
 expect truth (it succeeded)
@@ -43,7 +54,7 @@ set large_path to repository path from root and the string form of "huge_file.cp
 write (the string form of "int value;\n") repeated 1001 times to the file at large_path
 expect truth (it succeeded)
 
-set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      file: snake_case\n    cpp:\n      file: camelCase\n    javascript:\n      file: snake_case\n"
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    php:\n      file: snake_case\n    cpp:\n      file: camelCase\n    javascript:\n      file: snake_case\n    rust:\n      file: snake_case\n"
 expect truth (loaded's succeeded)
 set rules to loaded's conventions
 
@@ -53,6 +64,7 @@ set tree to scanned's tree
 expect truth (tree includes language "cpp")
 expect truth (tree includes language "javascript")
 expect truth (tree includes language "php")
+expect truth (tree includes language "rust")
 set entries to tree's entries
 set entry_position to 0
 loop while entry_position < the length of entries:
@@ -60,6 +72,7 @@ loop while entry_position < the length of entries:
     expect falsehood (scanned_entry's relative path contains ".github")
     expect falsehood (scanned_entry's relative path contains "third_party")
     expect falsehood (scanned_entry's relative path contains "dist")
+    expect falsehood (scanned_entry's relative path contains "target")
     set entry_position to entry_position + 1
 
 set excluded_renames to an empty list of string
@@ -72,6 +85,11 @@ set file_rename to the next file rename for "javascript" in tree using rules exc
 expect truth (file_rename's found)
 expect file_rename's source relative path to equal "BadDir/InnerDir/BadFile.js"
 expect file_rename's target relative path to equal "BadDir/InnerDir/bad_file.js"
+
+set rust_file_rename to the next file rename for "rust" in tree using rules excluding excluded_renames
+expect truth (rust_file_rename's found)
+expect rust_file_rename's source relative path to equal "BadRustFile.rs"
+expect rust_file_rename's target relative path to equal "bad_rust_file.rs"
 
 set large_files to check for source files larger than 1000 lines in tree
 expect truth (large_files's succeeded)

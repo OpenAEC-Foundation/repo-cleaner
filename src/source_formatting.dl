@@ -1,0 +1,101 @@
+import scanner.dl
+import commands.dl
+
+class:
+    patterns:
+        [a|the|] source formatting result
+    members:
+        succeeded as boolean
+        changed as boolean
+        descriptions as a pointer to list
+        error message as string
+
+local function a source formatting result succeeded {boolean:succeeded}, changed {boolean:changed}, with {a pointer to list:descriptions}, reporting {string:error}:
+    replacement:
+        @intrinsic(
+            "construct",
+            a source formatting result,
+            succeeded,
+            changed,
+            descriptions,
+            error
+        )
+
+function format C plus plus sources in {a pointer to repository tree:tree}:
+    execute:
+        set descriptions to an empty list of string
+        set changed to false
+        set entries to tree's entries
+        set position to 0
+        loop while position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if the inverse of entry's directory and entry's language = "cpp":
+                read the file at entry's absolute path and set before to it
+                if before failed:
+                    return a source formatting result succeeded false, changed changed, with descriptions, reporting before's error message
+                set arguments to an empty list of string
+                append the string form of "-i" to arguments
+                append entry's absolute path to arguments
+                set formatted to run tool "clang-format" with arguments in tree's root
+                free arguments
+                if the inverse of formatted's succeeded:
+                    return a source formatting result succeeded false, changed changed, with descriptions, reporting formatted's error message
+                read the file at entry's absolute path and set after to it
+                if after failed:
+                    return a source formatting result succeeded false, changed changed, with descriptions, reporting after's error message
+                if before's contents != after's contents:
+                    set changed to true
+                    append (the string form of "Formatted ") + entry's relative path to descriptions
+            set position to position + 1
+        return a source formatting result succeeded true, changed changed, with descriptions, reporting the string form of ""
+
+function format Rust sources in {a pointer to repository tree:tree}:
+    execute:
+        set descriptions to an empty list of string
+        set paths to an empty list of string
+        set relative_paths to an empty list of string
+        set original_contents to an empty list of string
+        set entries to tree's entries
+        set position to 0
+        loop while position < the length of entries:
+            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
+            if the inverse of entry's directory and entry's language = "rust":
+                read the file at entry's absolute path and set before to it
+                if before failed:
+                    free paths
+                    free relative_paths
+                    free original_contents
+                    return a source formatting result succeeded false, changed false, with descriptions, reporting before's error message
+                append entry's absolute path to paths
+                append entry's relative path to relative_paths
+                append before's contents to original_contents
+            set position to position + 1
+
+        set arguments to an empty list of string
+        append the string form of "fmt" to arguments
+        append the string form of "--all" to arguments
+        set formatted to run tool "cargo" with arguments in tree's root
+        free arguments
+        if the inverse of formatted's succeeded:
+            free paths
+            free relative_paths
+            free original_contents
+            return a source formatting result succeeded false, changed false, with descriptions, reporting formatted's error message
+
+        set changed to false
+        set position to 0
+        loop while position < the length of paths:
+            read the file at (the item at position in paths) and set after to it
+            if after failed:
+                free paths
+                free relative_paths
+                free original_contents
+                return a source formatting result succeeded false, changed changed, with descriptions, reporting after's error message
+            if after's contents != the item at position in original_contents:
+                set changed to true
+                append (the string form of "Formatted ") + the item at position in relative_paths to descriptions
+            set position to position + 1
+        free paths
+        free relative_paths
+        free original_contents
+        return a source formatting result succeeded true, changed changed, with descriptions, reporting the string form of ""

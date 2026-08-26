@@ -1,0 +1,34 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+set source_path to repository path from root and "sample.rs"
+set source to the string form of "pub fn BadFunction() {}\n"
+write source to the file at source_path
+expect truth it succeeded
+
+set loaded to load conventions from "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    rust:\n      function: snake_case\n      file: snake_case\n"
+expect truth loaded's succeeded
+set arguments to an empty list of string
+set backend to a language backend named "rust" using "rust-analyzer" with arguments
+set backends to a list containing backend
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends with git "git", applying fixes true
+expect falsehood enforced's succeeded
+expect falsehood enforced's changed
+expect enforced's error message to equal "Rust convention enforcement requires a root Cargo.toml workspace manifest"
+expect the length of enforced's report's failures to equal 1
+read the file at source_path and set unchanged to it
+expect truth unchanged succeeded
+expect unchanged's contents to equal source
+
+free convention enforcement result enforced
+free backends
+free language backend backend
+free conventions result loaded
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "rust manifest: passed" as a line
