@@ -1,83 +1,10 @@
 import conventions.dl
 import scanner.dl
+import language_server_types.dl
 import language_symbol_spelling.dl
 import language_workspace_edit.dl
 import lib/lsp.dl
 import lib/workspace_edit.dl
-
-class:
-    patterns:
-        [a|the|] language backend
-    members:
-        language as string
-        executable as string
-        command as a process command
-        initialization progress title as string
-        loads documents for path renames as boolean
-        uses path rename preparation as boolean
-
-class:
-    patterns:
-        [a|the|] symbol candidate
-    members:
-        found as boolean
-        file path as string
-        relative path as string
-        uri as string
-        language as string
-        category as string
-        name as string
-        replacement as string
-        line as a 32 bit integer
-        character as a 32 bit integer
-
-class:
-    patterns:
-        [a|the|] symbol search result
-    members:
-        succeeded as boolean
-        candidate as symbol candidate
-        error message as string
-
-class:
-    patterns:
-        [a|the|] language operation result
-    members:
-        succeeded as boolean
-        changed as boolean
-        description as string
-        error message as string
-
-class:
-    patterns:
-        [a|the|] symbol rename result
-    members:
-        succeeded as boolean
-        changed as boolean
-        refused as boolean
-        description as string
-        error message as string
-
-class:
-    patterns:
-        [a|the|] language session
-    members:
-        backend as a pointer to language backend
-        root as string
-        client as a pointer to LSP client
-        active document URI as string
-        symbol search category as string
-        symbol search position as integer
-        excluded symbol candidates as a pointer to list
-
-class:
-    patterns:
-        [a|the|] language session result
-    members:
-        succeeded as boolean
-        session as a pointer to language session
-        error message as string
-
 local class:
     patterns:
         [a|the|] symbol search state
@@ -96,7 +23,6 @@ local class:
         character as a 32 bit integer
         error message as string
         excluded candidates as a pointer to list
-
 local function an allocated language backend named {string:language} using {string:executable} with {a pointer to list:arguments}, waiting for {string:progress_title}, loading documents for path renames {boolean:loads_documents}, and using path rename preparation {boolean:uses_preparation}:
     execute:
         set command to a process command for executable
@@ -105,6 +31,8 @@ local function an allocated language backend named {string:language} using {stri
             add the item at position in arguments as an argument to command
             set position to position + 1
         inherit the environment in command
+        if language = "rust":
+            set environment variable "CARGO_BUILD_JOBS" of command to "2"
         free arguments
         set value to @intrinsic(
             "construct",
@@ -140,6 +68,8 @@ function [the|] default language backend for {string:language}:
         else if language = "javascript":
             set executable to the string form of "typescript-language-server"
             append the string form of "--stdio" to arguments
+        else if language = "rust":
+            set executable to the string form of "rust-analyzer"
         else:
             free arguments
             @intrinsic("call", "libc", "abort", nothing)
@@ -147,6 +77,8 @@ function [the|] default language backend for {string:language}:
             return an allocated language backend named language using executable with arguments, waiting for "Indexing workspace", loading documents for path renames false, and using path rename preparation false
         if language = "javascript":
             return an allocated language backend named language using executable with arguments, waiting for the string form of "", loading documents for path renames true, and using path rename preparation true
+        if language = "rust":
+            return an allocated language backend named language using executable with arguments, waiting for "Indexing", loading documents for path renames true, and using path rename preparation true
         return a language backend named language using executable with arguments
 
 function [the|] default language backends:
@@ -155,6 +87,7 @@ function [the|] default language backends:
         append the default language backend for "php" to configured
         append the default language backend for "cpp" to configured
         append the default language backend for "javascript" to configured
+        append the default language backend for "rust" to configured
         return configured
 
 function free language backend {a pointer to language backend:backend}:
@@ -260,16 +193,16 @@ local function a failed received LSP response with status {integer:status} repor
             detail
         )
 
-function receive reply to {JSON-RPC send result:sent} from {a pointer to an LSP client:client}:
+local function receive reply to {JSON-RPC send result:sent} from {a pointer to an LSP client:client} waiting up to {integer:timeout_milliseconds} milliseconds:
     execute:
-        set waiting to true
-        loop while waiting:
+        set awaiting_reply to true
+        loop while awaiting_reply:
             set answer to the queued LSP response for sent's request identifier using client
             if answer succeeded or answer's status != the JSON-RPC queue empty status:
                 return answer
             free answer
 
-            set pumped to the result of pumping one LSP message using client waiting up to 20000 milliseconds
+            set pumped to the result of pumping one LSP message using client waiting up to timeout_milliseconds milliseconds
             if pumped failed:
                 return a failed received LSP response with status pumped's status reporting pumped's error message
             set discarded_error to take the LSP standard error from client
@@ -287,11 +220,48 @@ function receive reply to {JSON-RPC send result:sent} from {a pointer to an LSP 
             if notification succeeded:
                 free notification
 
+function receive reply to {JSON-RPC send result:sent} from {a pointer to an LSP client:client}:
+    replacement:
+        receive reply to sent from client waiting up to 20000 milliseconds
+
+function receive stable reply to LSP request {string:method} with {a pointer to a JSON value:parameters} from {a pointer to an LSP client:client}:
+    execute:
+        set attempt to 0
+        set retrying to true
+        loop while retrying:
+            set sent to the result of sending an LSP request method with parameters using client
+            if sent failed:
+                return a failed received LSP response with status sent's status reporting sent's error message
+            set response to receive reply to sent from client waiting up to 300000 milliseconds
+            set content_modified to response failed and response's status = the JSON-RPC remote error status
+            if content_modified:
+                set content_modified to response's remote error code = the LSP content modified code
+            if the inverse of content_modified or attempt = 2:
+                return response
+            free response
+            set attempt to attempt + 1
+
 local function stop {a pointer to an LSP client:client}:
     execute:
-        set stopped to the result of shutting down client waiting up to 20000 milliseconds
-        set succeeded to stopped succeeded
-        set error_message to stopped's error message
+        set sent to the result of sending an LSP request "shutdown" using client
+        if sent failed:
+            set error_message to sent's error message
+            free client
+            return @intrinsic("construct", a language operation result, false, false, the string form of "", error_message)
+        set response to receive reply to sent from client
+        if response failed:
+            set error_message to error reported by response
+            free response
+            free client
+            return @intrinsic("construct", a language operation result, false, false, the string form of "", error_message)
+        if response's result is not JSON null:
+            free response
+            free client
+            return @intrinsic("construct", a language operation result, false, false, the string form of "", the string form of "LSP shutdown result must be null")
+        free response
+        set exited to the result of sending an LSP notification "exit" using client
+        set succeeded to exited succeeded
+        set error_message to exited's error message
         free client
         return @intrinsic("construct", a language operation result, succeeded, false, the string form of "", error_message)
 
@@ -310,8 +280,7 @@ local function wait for workspace progress {string:progress_title} through {a po
         set progress_started to false
         set progress_token to the string form of ""
         set completed to false
-        set attempts to 0
-        loop while (the inverse of completed) and attempts < 1024:
+        loop while the inverse of completed:
             set pumped to the result of pumping one LSP message using client waiting up to 300000 milliseconds
             if pumped failed:
                 return @intrinsic(
@@ -413,17 +382,6 @@ local function wait for workspace progress {string:progress_title} through {a po
                                 if progress_kind = "end":
                                     set completed to true
                 free notification
-            set attempts to attempts + 1
-
-        if the inverse of completed:
-            return @intrinsic(
-                "construct",
-                a language operation result,
-                false,
-                false,
-                the string form of "",
-                the string form of "Language server sent too many messages before workspace initialization completed"
-            )
         return @intrinsic(
             "construct",
             a language operation result,
@@ -458,7 +416,7 @@ function begin language session using {a pointer to language backend:backend} in
         allocate one slot of initial and set active_session to it
         set ready to wait for workspace progress backend's initialization progress title through active_session's client
         if the inverse of ready's succeeded:
-            set stopped to stop active_session's client
+            set stopped to stop (active_session's client)
             free active_session's excluded symbol candidates
             @intrinsic("destroy at", active_session)
             @intrinsic("call", "libc", "free", nothing, active_session)
@@ -780,11 +738,8 @@ function find next {string:category} violation through {a pointer to language se
 
                 set parameters to a new JSON-RPC object
                 add JSON-RPC member "textDocument" containing an LSP text document identifier for uri_result's value to parameters
-                set sent to the result of sending an LSP request "textDocument/documentSymbol" with parameters using client
+                set response to receive stable reply to LSP request "textDocument/documentSymbol" with parameters from client
                 free parameters
-                if sent failed:
-                    return failed symbol search sent's error message
-                set response to receive reply to sent from client
                 if response failed:
                     set message to error reported by response
                     free response
@@ -897,11 +852,8 @@ function apply symbol rename {symbol candidate:candidate} through {a pointer to 
             set preparation_parameters to a new JSON-RPC object
             add JSON-RPC member "textDocument" containing an LSP text document identifier for candidate's uri to preparation_parameters
             add JSON-RPC member "position" containing an LSP position at line candidate's line and character candidate's character to preparation_parameters
-            set preparation_sent to the result of sending an LSP request "textDocument/prepareRename" with preparation_parameters using client
+            set preparation_response to receive stable reply to LSP request "textDocument/prepareRename" with preparation_parameters from client
             free preparation_parameters
-            if preparation_sent failed:
-                return a failed symbol rename changed false reporting preparation_sent's error message
-            set preparation_response to receive reply to preparation_sent from client
             if preparation_response failed:
                 set message to error reported by preparation_response
                 set refused to preparation_response's status = the JSON-RPC remote error status
@@ -918,11 +870,8 @@ function apply symbol rename {symbol candidate:candidate} through {a pointer to 
         add JSON-RPC member "textDocument" containing an LSP text document identifier for candidate's uri to parameters
         add JSON-RPC member "position" containing an LSP position at line candidate's line and character candidate's character to parameters
         add JSON-RPC member "newName" containing a new JSON-RPC text for candidate's replacement to parameters
-        set sent to the result of sending an LSP request "textDocument/rename" with parameters using client
+        set response to receive stable reply to LSP request "textDocument/rename" with parameters from client
         free parameters
-        if sent failed:
-            return a failed symbol rename changed false reporting sent's error message
-        set response to receive reply to sent from client
         if response failed:
             set message to error reported by response
             set refused to response's status = the JSON-RPC remote error status

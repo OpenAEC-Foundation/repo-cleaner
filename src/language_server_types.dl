@@ -1,0 +1,74 @@
+import lib/lsp.dl
+
+class:
+    patterns:
+        [a|the|] language backend
+    members:
+        language as string
+        executable as string
+        command as a process command
+        initialization progress title as string
+        loads documents for path renames as boolean
+        uses path rename preparation as boolean
+
+class:
+    patterns:
+        [a|the|] symbol candidate
+    members:
+        found as boolean
+        file path as string
+        relative path as string
+        uri as string
+        language as string
+        category as string
+        name as string
+        replacement as string
+        line as a 32 bit integer
+        character as a 32 bit integer
+
+class:
+    patterns:
+        [a|the|] symbol search result
+    members:
+        succeeded as boolean
+        candidate as symbol candidate
+        error message as string
+
+class:
+    patterns:
+        [a|the|] language operation result
+    members:
+        succeeded as boolean
+        changed as boolean
+        description as string
+        error message as string
+
+class:
+    patterns:
+        [a|the|] symbol rename result
+    members:
+        succeeded as boolean
+        changed as boolean
+        refused as boolean
+        description as string
+        error message as string
+
+class:
+    patterns:
+        [a|the|] language session
+    members:
+        backend as a pointer to language backend
+        root as string
+        client as a pointer to LSP client
+        active document URI as string
+        symbol search category as string
+        symbol search position as integer
+        excluded symbol candidates as a pointer to list
+
+class:
+    patterns:
+        [a|the|] language session result
+    members:
+        succeeded as boolean
+        session as a pointer to language session
+        error message as string

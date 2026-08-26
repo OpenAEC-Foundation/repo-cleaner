@@ -118,6 +118,7 @@ jobs:
       - name: Install language servers
         run: |
           set -euo pipefail
+          rustup component add rust-analyzer rustfmt
           npm install --global typescript-language-server@5.3.0 typescript@6.0.3
           mkdir -p "$HOME/.local/bin"
           curl --fail --location --silent --show-error \
@@ -129,6 +130,12 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           command -v typescript-language-server
           command -v tsserver
+          command -v cargo
+          command -v rust-analyzer
+          command -v rustfmt
+          cargo --version
+          rust-analyzer --version
+          rustfmt --version
           "$HOME/.local/bin/phpactor" --version
 
       - name: Verify selected native tools

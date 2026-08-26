@@ -1,0 +1,57 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+set source_directory to repository path from root and "src"
+create a directory at source_directory
+expect truth it succeeded
+set manifest_path to repository path from root and "Cargo.toml"
+write the string form of "[package]\nname = \"rust_convention_test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n" to the file at manifest_path
+expect truth it succeeded
+set source_path to repository path from source_directory and "lib.rs"
+set source to the string form of "#![allow(nonstandard_style)]\npub mod BadModule { pub fn good() {} }\npub trait bad_trait { fn BadMethod(&self); }\npub struct bad_struct<bad_type> { pub BadField:bad_type }\nimpl<bad_type> bad_trait for bad_struct<bad_type> { fn BadMethod(&self) {} }\npub enum bad_enum { bad_variant, GoodVariant }\npub type bad_alias = bad_struct<i32>;\npub const bad_constant:i32=1;\npub static bad_static:i32=2;\nmacro_rules! BadMacro { () => { 1 }; }\npub fn BadFunction(value:i32)->i32{let BadLocal=value+bad_static;BadLocal+BadMacro!()}\npub fn caller()->i32{BadFunction(2)}\n"
+write source to the file at source_path
+expect truth it succeeded
+
+set convention_source to the string form of "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    rust:\n      namespace: snake_case\n      class: PascalCase\n      function: snake_case\n      variable: snake_case\n      constant: SCREAMING_SNAKE_CASE\n      enum: PascalCase\n      file: snake_case\n"
+set loaded to load conventions from convention_source
+expect truth loaded's succeeded
+set backend to the default language backend for "rust"
+expect backend's executable to equal "rust-analyzer"
+set backends to a list containing backend
+
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends with git "git", applying fixes true
+if the inverse of enforced's succeeded:
+    print enforced's error message as a line
+expect truth enforced's succeeded
+expect truth enforced's changed
+expect the length of enforced's report's remaining violations to equal 0
+read the file at source_path and set formatted to it
+expect truth formatted succeeded
+expect truth (formatted's contents contains "pub mod bad_module")
+expect truth (formatted's contents contains "pub trait BadTrait")
+expect truth (formatted's contents contains "fn bad_method(&self)")
+expect truth (formatted's contents contains "pub struct BadStruct")
+expect truth (formatted's contents contains "<BadType>")
+expect truth (formatted's contents contains "pub bad_field: BadType")
+expect truth (formatted's contents contains "pub enum BadEnum")
+expect truth (formatted's contents contains "BadVariant")
+expect truth (formatted's contents contains "pub type BadAlias")
+expect truth (formatted's contents contains "pub const BAD_CONSTANT: i32 = 1;")
+expect truth (formatted's contents contains "pub static BAD_STATIC: i32 = 2;")
+expect truth (formatted's contents contains "macro_rules! bad_macro")
+expect truth (formatted's contents contains "pub fn bad_function(value: i32) -> i32")
+expect truth (formatted's contents contains "let bad_local")
+expect truth (formatted's contents contains "bad_function(2)")
+
+free convention enforcement result enforced
+free backends
+free language backend backend
+free conventions result loaded
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "rust backend integration: passed" as a line

@@ -1,0 +1,59 @@
+import support.dl
+import ../src/enforcer.dl
+
+create a temporary directory
+set temporary to it
+expect truth temporary succeeded
+set root to temporary's directory path
+set source_directory to repository path from root and "src"
+set bad_directory to repository path from source_directory and "BadDir"
+create a directory tree at bad_directory
+expect truth it succeeded
+set manifest_path to repository path from root and "Cargo.toml"
+write the string form of "[package]\nname = \"rust_path_test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n" to the file at manifest_path
+expect truth it succeeded
+set library_path to repository path from source_directory and "lib.rs"
+write the string form of "mod BadDir;\npub use BadDir::GoodType;\n" to the file at library_path
+expect truth it succeeded
+set module_path to repository path from bad_directory and "mod.rs"
+write the string form of "mod BadModule;\npub use BadModule::GoodType;\n" to the file at module_path
+expect truth it succeeded
+set nested_path to repository path from bad_directory and "BadModule.rs"
+write the string form of "pub struct GoodType;\n" to the file at nested_path
+expect truth it succeeded
+
+set convention_source to the string form of "naming:\n  repository:\n    case: kebab-case\n  directory:\n    case: snake_case\n  language:\n    rust:\n      namespace: snake_case\n      class: PascalCase\n      function: snake_case\n      variable: snake_case\n      constant: SCREAMING_SNAKE_CASE\n      enum: PascalCase\n      file: snake_case\n"
+set loaded to load conventions from convention_source
+expect truth loaded's succeeded
+set backend to the default language backend for "rust"
+set backends to a list containing backend
+
+set enforced to enforce conventions in working copy root for repository "demo" using loaded's conventions and backends with git "git", applying fixes true
+if the inverse of enforced's succeeded:
+    print enforced's error message as a line
+expect truth enforced's succeeded
+expect truth enforced's changed
+set renamed_directory to repository path from source_directory and "bad_dir"
+set renamed_module to repository path from renamed_directory and "bad_module.rs"
+set directory_entry to the file system entry at renamed_directory
+expect truth directory_entry is a directory
+set module_entry to the file system entry at renamed_module
+expect truth module_entry is a regular file
+read the file at library_path and set updated_library to it
+expect truth updated_library succeeded
+expect truth (updated_library's contents contains "mod bad_dir;")
+expect truth (updated_library's contents contains "bad_dir::GoodType")
+set renamed_mod_path to repository path from renamed_directory and "mod.rs"
+read the file at renamed_mod_path and set updated_module to it
+expect truth updated_module succeeded
+expect truth (updated_module's contents contains "mod bad_module;")
+expect truth (updated_module's contents contains "bad_module::GoodType")
+
+free convention enforcement result enforced
+free backends
+free language backend backend
+free conventions result loaded
+remove the filesystem tree at root
+expect truth it succeeded
+
+print "rust path backend integration: passed" as a line

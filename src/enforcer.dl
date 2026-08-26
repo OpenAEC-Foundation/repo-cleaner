@@ -2,6 +2,8 @@ import language_server_paths.dl
 import path_literal_references.dl
 import reporting.dl
 import github.dl
+import rust_naming.dl
+import source_formatting.dl
 
 class:
     patterns:
@@ -27,15 +29,6 @@ local class:
         changed as boolean
         refused as boolean
         description as string
-        error message as string
-
-local class:
-    patterns:
-        [a|the|] formatting result
-    members:
-        succeeded as boolean
-        changed as boolean
-        descriptions as a pointer to list
         error message as string
 
 local function an empty language backend pointer:
@@ -324,62 +317,6 @@ local function record mutation {string:description} as a fix if {boolean:fixing}
         else:
             append description to remaining
 
-local function format C plus plus sources in {a pointer to repository tree:tree}:
-    execute:
-        set descriptions to an empty list of string
-        set changed to false
-        set entries to tree's entries
-        set position to 0
-        loop while position < the length of entries:
-            set entry to @intrinsic("cast", the item at position in entries, a repository entry)
-            if the inverse of entry's directory and entry's language = "cpp":
-                read the file at entry's absolute path and set before to it
-                if before failed:
-                    return @intrinsic(
-                        "construct",
-                        a formatting result,
-                        false,
-                        changed,
-                        descriptions,
-                        before's error message
-                    )
-                set arguments to an empty list of string
-                append the string form of "-i" to arguments
-                append entry's absolute path to arguments
-                set formatted to run tool "clang-format" with arguments in tree's root
-                free arguments
-                if the inverse of formatted's succeeded:
-                    return @intrinsic(
-                        "construct",
-                        a formatting result,
-                        false,
-                        changed,
-                        descriptions,
-                        formatted's error message
-                    )
-                read the file at entry's absolute path and set after to it
-                if after failed:
-                    return @intrinsic(
-                        "construct",
-                        a formatting result,
-                        false,
-                        changed,
-                        descriptions,
-                        after's error message
-                    )
-                if before's contents != after's contents:
-                    set changed to true
-                    append (the string form of "Formatted ") + entry's relative path to descriptions
-            set position to position + 1
-        return @intrinsic(
-            "construct",
-            a formatting result,
-            true,
-            changed,
-            descriptions,
-            the string form of ""
-        )
-
 local function build enforcement result for {string:repository_name} succeeded {boolean:succeeded}, changed {boolean:changed}, with {a pointer to list:phases}, {a pointer to list:languages}, {a pointer to list:fixes}, {a pointer to list:remaining}, {a pointer to list:failures}, and error {string:error}:
     execute:
         set pull_request_state to the string form of "none"
@@ -414,6 +351,20 @@ function enforce conventions in working copy {string:root} for repository {strin
             return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error scanned's error message
         set tree to scanned's tree
         set languages to the detected language names in tree
+
+        if tree includes language "rust":
+            set cargo_manifest_path to repository path from root and "Cargo.toml"
+            set cargo_manifest to the file system entry at cargo_manifest_path
+            if cargo_manifest lookup failed:
+                set error to cargo_manifest's error message
+                append error to failures
+                free repository tree result scanned
+                return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
+            if cargo_manifest is not a regular file:
+                set error to the string form of "Rust convention enforcement requires a root Cargo.toml workspace manifest"
+                append error to failures
+                free repository tree result scanned
+                return build enforcement result for repository_name succeeded false, changed false, with phases, languages, recorded_fixes, remaining, failures, and error error
 
         if the length of languages = 0:
             set size_check to check for source files larger than 1000 lines in tree
@@ -624,6 +575,31 @@ function enforce conventions in working copy {string:root} for repository {strin
                         else:
                             record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
                 set category_position to category_position + 1
+            if healthy and active's backend's language = "rust":
+                set searching to true
+                loop while healthy and searching:
+                    set found to find a Rust compiler naming violation in tree with rules
+                    if the inverse of found's succeeded:
+                        set error to found's error message
+                        append error to failures
+                        set healthy to false
+                        set searching to false
+                    else if the inverse of found's candidate's found:
+                        set searching to false
+                    else:
+                        set renamed to apply symbol rename found's candidate through active_session
+                        set changed to changed or renamed's changed
+                        if the inverse of renamed's succeeded:
+                            if renamed's refused:
+                                append the refused symbol rename description for found's candidate reporting renamed's error message to remaining
+                                set searching to false
+                            else:
+                                set error to renamed's error message
+                                append error to failures
+                                set healthy to false
+                                set searching to false
+                        else:
+                            record mutation renamed's description as a fix if fixing in recorded_fixes or remaining
             set session_position to session_position + 1
         free categories
 
@@ -637,6 +613,20 @@ function enforce conventions in working copy {string:root} for repository {strin
         if healthy:
             if tree includes language "cpp":
                 set formatted to format C plus plus sources in tree
+                set changed to changed or formatted's changed
+                set position to 0
+                loop while position < the length of formatted's descriptions:
+                    record mutation the item at position in formatted's descriptions as a fix if fixing in recorded_fixes or remaining
+                    set position to position + 1
+                free formatted's descriptions
+                if the inverse of formatted's succeeded:
+                    set error to formatted's error message
+                    append error to failures
+                    set healthy to false
+
+        if healthy:
+            if tree includes language "rust":
+                set formatted to format Rust sources in tree
                 set changed to changed or formatted's changed
                 set position to 0
                 loop while position < the length of formatted's descriptions:
