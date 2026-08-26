@@ -17,4 +17,4 @@ jobs:
       org: OpenAEC-Foundation
       repo_cleaner_ref: ${{ github.sha }}
     secrets:
-      gh_token: ${{ secrets.CONVENTION_ENFORCER_TOKEN }}
+      gh_token: ${{ github.token }}
