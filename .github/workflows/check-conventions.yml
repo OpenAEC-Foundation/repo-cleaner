@@ -30,7 +30,7 @@ on:
     secrets:
       gh_token:
         description: Token with contents, issues, and pull-request access
-        required: true
+        required: false
 
 permissions:
   contents: write
@@ -41,10 +41,13 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     env:
-      GH_TOKEN: ${{ secrets.gh_token }}
+      GH_TOKEN: ${{ secrets.gh_token || github.token }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
+      - name: Verify GitHub authentication
+        run: gh auth status
+
       - name: Checkout repo-cleaner
         uses: actions/checkout@v4
         with:

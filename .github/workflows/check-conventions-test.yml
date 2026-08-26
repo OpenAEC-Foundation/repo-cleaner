@@ -16,5 +16,3 @@ jobs:
       repo_name: ${{ github.event.repository.name }}
       org: OpenAEC-Foundation
       repo_cleaner_ref: ${{ github.sha }}
-    secrets:
-      gh_token: ${{ github.token }}
